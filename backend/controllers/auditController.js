@@ -1,144 +1,91 @@
-const db = require('../config/db');
+// WBS 2.1.5 — Monthly Physical Audit and Stock Adjustment
+// Assigned Member(s): Miguel Justin Javier
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// controllers/auditController.js - monthly physical audit + adjustment log (2.1.5)
+// Daloy: Admin nag-count -> "pending" ang difference -> i-approve -> saka lang magbabago ang stock.
+const model = require('../models/auditModel');
+const logActivity = require('../utils/activityLog');
 
-// ==========================================
-// 1.6 GULAYAN MONTHLY PHYSICAL AUDIT AND STOCK ADJUSTMENT LOG
-// ==========================================
-exports.recordGulayanAudit = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
+const month = () => new Date().toISOString().slice(0, 7);
 
-  const { item_name, counted_quantity, reason, audit_date } = req.body;
+async function getSetting(key, fallback) {
+  const [[row]] = await model.getSetting([key]);
+  return row ? row.svalue : fallback;
+}
+async function setSetting(key, value) {
+  await model.saveSetting([key, String(value)]);
+}
 
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    const [invRows] = await connection.query(
-      `SELECT kilos FROM inventory WHERE department = 'Gulayan' AND item_name = ?`,
-      [item_name]
-    );
-    const systemQuantity = invRows.length > 0 ? Number(invRows[0].kilos) : 0;
-    const difference = Number(counted_quantity) - systemQuantity;
-
-    await connection.query(
-      `UPDATE inventory SET kilos = ? WHERE department = 'Gulayan' AND item_name = ?`,
-      [counted_quantity, item_name]
-    );
-
-    const [result] = await connection.query(
-      `INSERT INTO stock_adjustment_logs 
-       (department, audit_date, item_name, system_quantity, counted_quantity, difference, reason)
-       VALUES ('Gulayan', ?, ?, ?, ?, ?, ?)`,
-      [audit_date, item_name, systemQuantity, counted_quantity, difference, reason]
-    );
-
-    await connection.commit();
-    res.status(201).json({
-      id: result.insertId,
-      department: 'Gulayan',
-      audit_date,
-      item_name,
-      system_quantity: systemQuantity,
-      counted_quantity,
-      difference,
-      reason,
-    });
-  } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ message: 'Failed to record Gulayan audit.', error: error.message });
-  } finally {
-    connection.release();
-  }
+// Schedule ng audit ng department: anong araw ng buwan, at kung due na
+exports.getSchedule = async (req, res) => {
+  const dept = req.params.dept;
+  const day = Number(await getSetting(`audit_day_${dept}`, 25)); // default: ika-25
+  const last = await getSetting(`audit_last_${dept}`, '');
+  const due = new Date().getDate() >= day && last !== month();
+  res.json({ day, lastAudit: last, due });
 };
 
-exports.getGulayanAuditLogs = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
-
-  try {
-    const [logs] = await db.query(
-      `SELECT id, audit_date, item_name, system_quantity, counted_quantity, difference, reason
-       FROM stock_adjustment_logs
-       WHERE department = 'Gulayan'
-       ORDER BY audit_date DESC, id DESC`
-    );
-    res.status(200).json(logs);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve Gulayan audit logs.', error: error.message });
-  }
+exports.setSchedule = async (req, res) => {
+  const day = Number(req.body.day);
+  if (!(day >= 1 && day <= 28)) return res.status(400).json({ message: 'Choose a day from 1 to 28.' });
+  await setSetting(`audit_day_${req.params.dept}`, day);
+  await logActivity(req.user, req.params.dept, `Set audit schedule to day ${day} of the month`);
+  res.json({ message: 'Audit schedule saved.' });
 };
 
-// ==========================================
-// 2.6 PRUTASAN MONTHLY PHYSICAL AUDIT AND STOCK ADJUSTMENT LOG
-// ==========================================
-exports.recordPrutasanAudit = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
+// Admin nag-submit ng counted quantities. Ang difference ay pending muna.
+exports.submit = async (req, res) => {
+  const { department, counts } = req.body; // counts = [{ item_id, counted, reason }]
+  let pending = 0;
+
+  for (const c of counts) {
+    if (c.counted === '' || c.counted == null) continue; // hindi binilang
+    const [[item]] = await model.findDepartmentInventoryItem([c.item_id, department]);
+    if (!item) continue;
+    const diff = Number(c.counted) - Number(item.quantity);
+    if (!Number.isFinite(Number(c.counted)) || Number(c.counted)<0) return res.status(400).json({message:'Invalid physical count.'});
+    if (diff === 0) continue;
+
+    // isang pending lang kada item
+    await model.rejectSupersededAdjustments([item.id]);
+    await model.createStockAdjustment([month(), item.id, item.quantity, c.counted, diff, c.reason || 'Monthly audit']);
+    pending++;
   }
-
-  const { item_name, counted_quantity, reason, audit_date } = req.body;
-
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    // Retrieve current system quantity for Prutasan item
-    const [invRows] = await connection.query(
-      `SELECT kilos FROM inventory WHERE department = 'Prutasan' AND item_name = ?`,
-      [item_name]
-    );
-    const systemQuantity = invRows.length > 0 ? Number(invRows[0].kilos) : 0;
-    const difference = Number(counted_quantity) - systemQuantity;
-
-    // Apply approved correction to Prutasan inventory
-    await connection.query(
-      `UPDATE inventory SET kilos = ? WHERE department = 'Prutasan' AND item_name = ?`,
-      [counted_quantity, item_name]
-    );
-
-    // Save difference in stock-adjustment log
-    const [result] = await connection.query(
-      `INSERT INTO stock_adjustment_logs 
-       (department, audit_date, item_name, system_quantity, counted_quantity, difference, reason)
-       VALUES ('Prutasan', ?, ?, ?, ?, ?, ?)`,
-      [audit_date, item_name, systemQuantity, counted_quantity, difference, reason]
-    );
-
-    await connection.commit();
-    res.status(201).json({
-      id: result.insertId,
-      department: 'Prutasan',
-      audit_date,
-      item_name,
-      system_quantity: systemQuantity,
-      counted_quantity,
-      difference,
-      reason,
-    });
-  } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ message: 'Failed to record Prutasan audit.', error: error.message });
-  } finally {
-    connection.release();
-  }
+  await setSetting(`audit_last_${department}`, month());
+  await logActivity(req.user, department, `Submitted audit count (${pending} difference(s))`);
+  res.json({ message: pending ? `${pending} difference(s) waiting for approval.` : 'Count matches the system. No adjustments needed.' });
 };
 
-exports.getPrutasanAuditLogs = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
-
+// Approve: dito lang tunay na nagbabago ang stock
+exports.approve = async (req, res) => {
+  const conn = await model.getConnection();
   try {
-    const [logs] = await db.query(
-      `SELECT id, audit_date, item_name, system_quantity, counted_quantity, difference, reason
-       FROM stock_adjustment_logs
-       WHERE department = 'Prutasan'
-       ORDER BY audit_date DESC, id DESC`
-    );
-    res.status(200).json(logs);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve Prutasan audit logs.', error: error.message });
-  }
+    await conn.beginTransaction();
+    const [[adj]] = await model.lockPendingAdjustment(conn, [req.params.id]);
+    if (!adj) throw new Error('Adjustment not found or already handled.');
+    const [[item]] = await model.lockInventoryItem(conn, [adj.item_id]);
+    if (!item || item.is_archived) throw new Error('Item is archived or missing.');
+    // A physical count is a snapshot. If stock changed since counting, re-count rather than apply a stale difference.
+    if (Math.abs(Number(item.quantity)-Number(adj.system_qty))>0.001) throw new Error('Stock changed since audit. Please submit a new physical count.');
+    if (Number(adj.counted_qty)<0) throw new Error('Negative counted quantity.');
+    await model.setInventoryQuantity(conn, [adj.counted_qty,item.id]);
+    if (Number(adj.difference)!==0) await model.createStockMovement(conn, [item.id,adj.difference>0?'in':'out',Math.abs(Number(adj.difference)),'Audit adjustment',item.cost_per_kg]);
+    await model.approveAdjustment(conn, [adj.id]);
+    await conn.commit();
+    await logActivity(req.user,item.department,`Approved audit adjustment ${item.name}: ${adj.difference}`);
+    res.json({message:'Correction applied.'});
+  } catch(e) {await conn.rollback();res.status(400).json({message:e.message});}
+  finally {conn.release();}
+};
+
+exports.reject = async (req, res) => {
+  const [r] = await model.rejectAdjustment([req.params.id]);
+  if (!r.affectedRows) return res.status(404).json({ message: 'Adjustment not found or already handled.' });
+  await logActivity(req.user, null, `Rejected audit adjustment #${req.params.id}`);
+  res.json({ message: 'Adjustment rejected.' });
+};
+
+exports.log = async (req, res) => {
+  const [rows] = await model.listStockAdjustments([req.params.dept]);
+  res.json(rows);
 };

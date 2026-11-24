@@ -1,316 +1,114 @@
-const db = require('../config/db');
+// WBS 2.1.1–2.1.4 — Inventory and Stock Movement
+// Assigned Member(s): Miguel Justin Javier
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// controllers/inventoryController.js - inventory ng 3 department (2.1)
+const model = require('../models/inventoryModel');
+const logActivity = require('../utils/activityLog');
 
-// ==========================================
-// 1.3 & 2.3 INVENTORY MANAGEMENT (GULAYAN & PRUTASAN)
-// ==========================================
+// Babuyan categories: feed = sack, medicine at vitamin = bottle
+const BABUYAN_CATEGORIES = { feed: 'sack', medicine: 'bottle', vitamin: 'bottle' };
+
+// Listahan ng stock + low-stock at spoilage flags (2.1.4)
+exports.list = async (req, res) => {
+  const [rows] = await model.listDepartmentInventory([req.params.dept]);
+  // hindi dapat makita ng staff ang cost
+  if (req.user.role !== 'admin') rows.forEach((r) => { delete r.cost_per_kg; });
+  res.json(rows);
+};
+
+// Admin: mag-add ng stock (may purchase cost per kilo)
 exports.addStock = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
-
-  const { department, item_name, kilos, purchase_cost_per_kilo } = req.body;
-
-  if (department !== 'Gulayan' && department !== 'Prutasan') {
-    return res.status(400).json({ message: 'Invalid department.' });
-  }
-
-  const [result] = await db.query(
-    `INSERT INTO inventory (department, item_name, kilos, purchase_cost_per_kilo)
-     VALUES (?, ?, ?, ?)`,
-    [department, item_name, kilos, purchase_cost_per_kilo]
-  );
-
-  res.status(201).json({
-    id: result.insertId,
-    department,
-    item_name,
-    kilos,
-    purchase_cost_per_kilo,
-  });
-};
-
-exports.getStock = async (req, res) => {
-  const { department } = req.params;
-
-  const [records] = await db.query(
-    `SELECT id, department, item_name, kilos, purchase_cost_per_kilo
-     FROM inventory
-     WHERE department = ?`,
-    [department]
-  );
-
-  res.status(200).json(records);
-};
-
-exports.updateStock = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
-
-  const { id } = req.params;
-  const { item_name, kilos, purchase_cost_per_kilo } = req.body;
-
-  await db.query(
-    `UPDATE inventory
-     SET item_name = ?, kilos = ?, purchase_cost_per_kilo = ?
-     WHERE id = ?`,
-    [item_name, kilos, purchase_cost_per_kilo, id]
-  );
-
-  res.status(200).json({ message: 'Updated.' });
-};
-
-exports.deleteStock = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
-
-  const { id } = req.params;
-
-  await db.query(`DELETE FROM inventory WHERE id = ?`, [id]);
-
-  res.status(200).json({ message: 'Deleted.' });
-};
-
-// ==========================================
-// 1.4 GULAYAN STOCK MOVEMENT AND END-OF-DAY CLOSING
-// ==========================================
-exports.recordStockMovement = async (req, res) => {
-  const { item_name, movement_type, kilos, movement_date, cost_per_kilo } = req.body;
-
-  const connection = await db.getConnection();
+  const { department, name, category, recorded_at } = req.body;
+  const quantity = Number(req.body.quantity), cost = Number(req.body.cost_per_kg);
+  const price = req.body.sell_price === '' || req.body.sell_price == null ? null : Number(req.body.sell_price);
+  if (!['gulayan','prutasan','babuyan'].includes(department) || !String(name || '').trim() ||
+      !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(cost) || cost < 0 ||
+      (price !== null && (!Number.isFinite(price) || price < 0))) return res.status(400).json({message:'Invalid stock quantity, cost or price.'});
+  const cat = department === 'gulayan' ? 'vegetable' : department === 'prutasan' ? 'fruit' : category;
+  if (department === 'babuyan' && !BABUYAN_CATEGORIES[cat]) return res.status(400).json({message:'Invalid Babuyan category.'});
+  const unit = department === 'babuyan' ? BABUYAN_CATEGORIES[cat] : 'kg';
+  const timestamp = recorded_at ? String(recorded_at).replace('T',' ') + (String(recorded_at).length === 16 ? ':00' : '') : null;
+  if (timestamp && (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(timestamp) || Number.isNaN(Date.parse(timestamp.replace(' ','T'))))) return res.status(400).json({message:'Invalid date/time.'});
+  const conn = await model.getConnection();
   try {
-    await connection.beginTransaction();
-
-    const spoilageLoss = movement_type === 'OUT_SPOILAGE' ? Number(kilos) * Number(cost_per_kilo || 0) : 0;
-
-    await connection.query(
-      `INSERT INTO gulayan_stock_movements (department, item_name, movement_type, kilos, spoilage_loss, movement_date)
-       VALUES ('Gulayan', ?, ?, ?, ?, ?)`,
-      [item_name, movement_type, kilos, spoilageLoss, movement_date]
-    );
-
-    if (movement_type === 'IN') {
-      await connection.query(
-        `UPDATE inventory SET kilos = kilos + ? WHERE department = 'Gulayan' AND item_name = ?`,
-        [kilos, item_name]
-      );
-    } else if (movement_type === 'OUT_SALE' || movement_type === 'OUT_SPOILAGE') {
-      await connection.query(
-        `UPDATE inventory SET kilos = kilos - ? WHERE department = 'Gulayan' AND item_name = ?`,
-        [kilos, item_name]
-      );
+    await conn.beginTransaction();
+    const [[found]] = await model.lockInventoryItemByName(conn, [department,name.trim()]);
+    let itemId;
+    if (found) {
+      itemId=found.id;
+      await model.addInventoryStock(conn, [quantity,cost,price,itemId]);
+    } else {
+      const [r]=await model.createInventoryItem(conn, [department,cat,name.trim(),unit,quantity,cost,Number(req.body.low_threshold)||10,price||0]);
+      itemId=r.insertId;
     }
-
-    await connection.commit();
-    res.status(201).json({ message: 'Gulayan stock movement recorded.' });
-  } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ message: 'Error recording stock movement.', error: error.message });
-  } finally {
-    connection.release();
-  }
-};
-
-exports.computeDailyClosing = async (req, res) => {
-  const { date } = req.body;
-
-  try {
-    const [items] = await db.query(
-      `SELECT item_name, kilos AS closing_kilos FROM inventory WHERE department = 'Gulayan'`
-    );
-
-    for (const item of items) {
-      await db.query(
-        `INSERT INTO gulayan_daily_closing (department, item_name, closing_kilos, closing_date)
-         VALUES ('Gulayan', ?, ?, ?)`,
-        [item.item_name, item.closing_kilos, date]
-      );
+    await model.recordIncomingStock(conn, [itemId,quantity,cost,timestamp]);
+    const amount=Math.round(quantity*cost*100)/100;
+    if (amount>0) {
+      const expCat=department==='babuyan' ? (cat==='feed'?'feed':'veterinary care') : 'sourcing';
+      await model.createStockPurchaseExpense(conn, [department,expCat,amount,`Stock in: ${name.trim()} (${quantity} ${unit})`,timestamp]);
     }
-
-    res.status(200).json({ message: 'Daily closing computed.', items });
-  } catch (error) {
-    res.status(500).json({ message: 'Error computing daily closing.', error: error.message });
-  }
+    await conn.commit();
+    await logActivity(req.user,department,`Added ${quantity} ${unit} of ${name.trim()}`);
+    res.json({message:'Stock and purchase expense saved together.'});
+  } catch(e) {await conn.rollback();res.status(400).json({message:e.message});}
+  finally {conn.release();}
 };
 
-exports.getDailyMovementsAndClosing = async (req, res) => {
-  const { date } = req.query;
-
-  const [movements] = await db.query(
-    `SELECT id, item_name, movement_type, kilos, spoilage_loss, movement_date
-     FROM gulayan_stock_movements
-     WHERE department = 'Gulayan' AND DATE(movement_date) = ?`,
-    [date]
-  );
-
-  const [closing] = await db.query(
-    `SELECT item_name, closing_kilos, closing_date
-     FROM gulayan_daily_closing
-     WHERE department = 'Gulayan' AND DATE(closing_date) = ?`,
-    [date]
-  );
-
-  res.status(200).json({ movements, closing });
-};
-
-// ==========================================
-// 1.5 GULAYAN LOW-STOCK AND SPOILAGE INDICATORS
-// ==========================================
-exports.getGulayanIndicators = async (req, res) => {
+// Admin: i-edit ang name, quantity, cost, at low-stock level (2.1.1, 2.1.2)
+exports.update = async (req,res) => {
+  const { name, low_threshold, sell_price, cost_per_kg }=req.body;
+  const conn=await model.getConnection();
   try {
-    const [items] = await db.query(
-      `SELECT 
-         i.id,
-         i.item_name,
-         i.kilos,
-         i.purchase_cost_per_kilo,
-         i.low_stock_threshold,
-         (i.kilos <= i.low_stock_threshold) AS is_low_stock,
-         EXISTS(
-           SELECT 1 
-           FROM gulayan_stock_movements m 
-           WHERE m.department = 'Gulayan' 
-             AND m.item_name = i.item_name 
-             AND m.movement_type = 'OUT_SPOILAGE'
-         ) AS has_spoilage
-       FROM inventory i
-       WHERE i.department = 'Gulayan'`
-    );
-
-    res.status(200).json(items);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve Gulayan indicators.', error: error.message });
-  }
+    await conn.beginTransaction();
+    const [[item]]=await model.lockInventoryItemForUpdate(conn, [req.params.id]);
+    if (!item) {await conn.rollback();return res.status(404).json({message:'Item not found.'});}
+    const quantity=req.body.quantity == null ? Number(item.quantity) : Number(req.body.quantity);
+    const cost=cost_per_kg == null ? Number(item.cost_per_kg) : Number(cost_per_kg);
+    const price=sell_price == null || sell_price === '' ? Number(item.sell_price) : Number(sell_price);
+    if (!String(name||'').trim() || ![quantity,cost,price].every(Number.isFinite) || [quantity,cost,price].some(v=>v<0)) throw new Error('Invalid item details.');
+    const diff=quantity-Number(item.quantity);
+    await model.updateInventoryItem(conn, [name.trim(),quantity,cost,Number(low_threshold)||0,price,item.id]);
+    if (Math.abs(diff)>0.00001) await model.recordStockAdjustment(conn, [item.id,diff>0?'in':'out',Math.abs(diff),'Inventory adjustment (not purchase/sale)',cost]);
+    await conn.commit();
+    await logActivity(req.user,item.department,`Updated ${item.name} (adjustment ${diff})`);
+    res.json({message:'Item updated; quantity adjustment logged separately.'});
+  } catch(e) {await conn.rollback();res.status(400).json({message:e.message});}
+  finally {conn.release();}
 };
 
-// ==========================================
-// 2.4 PRUTASAN STOCK MOVEMENT AND END-OF-DAY CLOSING
-// ==========================================
-exports.recordPrutasanStockMovement = async (req, res) => {
-  const { item_name, movement_type, kilos, movement_date, reason } = req.body;
-
-  if (movement_type === 'OUT_SPOILAGE' && req.user?.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only for spoilage entry.' });
-  }
-
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    const [invRows] = await connection.query(
-      `SELECT purchase_cost_per_kilo FROM inventory WHERE department = 'Prutasan' AND item_name = ?`,
-      [item_name]
-    );
-    const costPerKilo = invRows.length > 0 ? Number(invRows[0].purchase_cost_per_kilo) : 0;
-    const spoilageLoss = movement_type === 'OUT_SPOILAGE' ? Number(kilos) * costPerKilo : 0;
-
-    await connection.query(
-      `INSERT INTO prutasan_stock_movements 
-       (department, item_name, movement_type, kilos, spoilage_loss, reason, movement_date)
-       VALUES ('Prutasan', ?, ?, ?, ?, ?, ?)`,
-      [item_name, movement_type, kilos, spoilageLoss, reason || null, movement_date]
-    );
-
-    if (movement_type === 'IN') {
-      await connection.query(
-        `UPDATE inventory SET kilos = kilos + ? WHERE department = 'Prutasan' AND item_name = ?`,
-        [kilos, item_name]
-      );
-    } else if (movement_type === 'OUT_SALE' || movement_type === 'OUT_SPOILAGE') {
-      await connection.query(
-        `UPDATE inventory SET kilos = kilos - ? WHERE department = 'Prutasan' AND item_name = ?`,
-        [kilos, item_name]
-      );
-    }
-
-    await connection.commit();
-    res.status(201).json({ message: 'Prutasan stock movement recorded.', spoilageLoss });
-  } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ message: 'Error recording Prutasan stock movement.', error: error.message });
-  } finally {
-    connection.release();
-  }
+// Archive rather than destroy historical stock, sales, usage, and audit evidence.
+exports.remove = async (req, res) => {
+  const [result] = await model.archiveInventoryItem([req.params.id]);
+  if (!result.affectedRows) return res.status(404).json({ message: 'Active item not found.' });
+  await logActivity(req.user, null, `Archived inventory item #${req.params.id} (history retained)`);
+  res.json({ message: 'Item archived. Its transaction and audit history is retained.' });
 };
 
-exports.computePrutasanDailyClosing = async (req, res) => {
-  const { date } = req.body;
-
+exports.addSpoilage = async (req, res) => {
+  const { item_id, note } = req.body;
+  const quantity = Number(req.body.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ message: 'Invalid spoilage quantity.' });
+  const conn = await model.getConnection();
   try {
-    const [items] = await db.query(
-      `SELECT item_name, kilos AS closing_kilos FROM inventory WHERE department = 'Prutasan'`
-    );
-
-    for (const item of items) {
-      await db.query(
-        `INSERT INTO prutasan_daily_closing (department, item_name, closing_kilos, closing_date)
-         VALUES ('Prutasan', ?, ?, ?)`,
-        [item.item_name, item.closing_kilos, date]
-      );
-    }
-
-    res.status(200).json({ message: 'Prutasan daily closing computed.', items });
-  } catch (error) {
-    res.status(500).json({ message: 'Error computing Prutasan daily closing.', error: error.message });
-  }
+    await conn.beginTransaction();
+    const [[item]] = await model.lockInventoryItemForSpoilage(conn, [item_id]);
+    if (!item || item.department === 'babuyan' || quantity > Number(item.quantity)) throw new Error('Invalid item or insufficient stock.');
+    await model.deductSpoiledStock(conn, [quantity, item_id]);
+    await model.recordSpoilage(conn, [item_id, quantity, note || '', item.cost_per_kg]);
+    await conn.commit();
+    await logActivity(req.user, item.department, `Spoilage: ${quantity} of ${item.name}`);
+    res.json({ message: 'Spoilage recorded.' });
+  } catch (err) { await conn.rollback(); res.status(400).json({ message: err.message }); }
+  finally { conn.release(); }
 };
 
-exports.getPrutasanDailyMovementsAndClosing = async (req, res) => {
-  const { date } = req.query;
-
-  try {
-    const [currentStock] = await db.query(
-      `SELECT id, item_name, kilos FROM inventory WHERE department = 'Prutasan'`
-    );
-
-    const [movements] = await db.query(
-      `SELECT id, item_name, movement_type, kilos, spoilage_loss, reason, movement_date
-       FROM prutasan_stock_movements
-       WHERE department = 'Prutasan' AND DATE(movement_date) = ?
-       ORDER BY movement_date DESC`,
-      [date]
-    );
-
-    const [closing] = await db.query(
-      `SELECT item_name, closing_kilos, closing_date
-       FROM prutasan_daily_closing
-       WHERE department = 'Prutasan' AND DATE(closing_date) = ?`,
-      [date]
-    );
-
-    res.status(200).json({ currentStock, movements, closing });
-  } catch (error) {
-    res.status(500).json({ message: 'Error retrieving Prutasan movements and closing.', error: error.message });
-  }
-};
-
-// ==========================================
-// 2.5 PRUTASAN LOW-STOCK AND SPOILAGE INDICATORS
-// ==========================================
-exports.getPrutasanIndicators = async (req, res) => {
-  try {
-    const [items] = await db.query(
-      `SELECT 
-         i.id,
-         i.item_name,
-         i.kilos,
-         i.purchase_cost_per_kilo,
-         i.low_stock_threshold,
-         (i.kilos <= i.low_stock_threshold) AS is_low_stock,
-         EXISTS(
-           SELECT 1 
-           FROM prutasan_stock_movements m 
-           WHERE m.department = 'Prutasan' 
-             AND m.item_name = i.item_name 
-             AND m.movement_type = 'OUT_SPOILAGE'
-         ) AS has_spoilage
-       FROM inventory i
-       WHERE i.department = 'Prutasan'`
-    );
-
-    res.status(200).json(items);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve Prutasan indicators.', error: error.message });
-  }
+// WBS 2.1.3 — Automatically calculated daily movement from the immutable transaction ledger.
+exports.movements = async (req, res) => {
+  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({message:'Invalid date.'});
+  const dept = req.params.dept;
+  const [rows] = await model.listDailyStockMovements([dept,date]);
+  // Compute balances entirely from stock movement history; never ask staff to enter closing stock.
+  const [closing] = await model.getDailyStockSummary([date,date,date,date,date,dept]);
+  res.json({rows,closing});
 };

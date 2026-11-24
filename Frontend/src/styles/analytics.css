@@ -1,0 +1,25 @@
+/* WBS 4.2.1, 4.2.2, 4.2.3 — Department analytics charts and layout
+   Assigned Member(s): Jhewell Latag
+   Note: WBS references identify related interfaces; shared selectors may be reused across modules.
+*/
+/* analytics.css - bar charts at analytics layout */
+.analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 22px; }
+.analytics-grid .card { margin-bottom: 0; }
+
+.bar-list { display: flex; flex-direction: column; gap: 14px; }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 90px; gap: 12px; align-items: center; font-size: 0.9rem; }
+.bar-label { font-weight: 700; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-value { text-align: right; color: var(--muted); font-weight: 700; }
+
+.bar-track { height: 12px; background: var(--accent-soft); border-radius: 99px; overflow: hidden; }
+/* lumalaki ang bar mula 0 papunta sa --w */
+.bar-fill { display: block; height: 100%; width: var(--w); background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 99px; animation: barGrow 1s var(--ease) both; }
+@keyframes barGrow { from { width: 0; } }
+
+@media (max-width: 500px) { .analytics-grid { grid-template-columns: 1fr; } .bar-row { grid-template-columns: 80px 1fr 70px; } }
+
+.chart-card { min-width: 0; }
+.chart-card h3 { font-size: 1.02rem; margin-bottom: 18px; color: var(--text-2); }
+.recharts-wrapper { font-family: var(--font-body); }
+.recharts-cartesian-axis-tick text { fill: var(--muted); font-weight: 600; }
+.recharts-legend-item-text { color: var(--text-2) !important; font-weight: 600; font-size: 0.85rem; }

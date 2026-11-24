@@ -1,120 +1,92 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 4.2.1 — Gulayan Analytics ONLY
+// Assigned Member: Jhewell Latag
+// WBS 4.2.1–4.2.3 — Department Analytics UI
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Analytics.jsx - hiwalay na analytics page per department (4.2)
+// Gumagamit ng graphs (bar, line, pie) galing sa Charts.jsx
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { api, peso } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import { SimpleBar, SimpleLine, SimplePie, GroupedBar } from './Charts.jsx';
 
-const GulayanAnalytics = () => {
-  const [analytics, setAnalytics] = useState(null);
+// kulay ng graph ayon sa department (kapareho ng theme sa global.css)
+const COLORS = { gulayan: '#14935f', prutasan: '#ea7414', babuyan: '#d63a5c' };
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-  useEffect(() => {
-    const loadAnalytics = async () => {
-      const res = await api.get('/analytics/gulayan');
-      setAnalytics(res.data);
-    };
-    loadAnalytics();
-  }, []);
+const Panel = ({ title, children }) => (
+  <div className="card chart-card"><h3>{title}</h3>{children}</div>
+);
 
-  if (!analytics) return <div>Loading Gulayan Analytics...</div>;
+export default function GulayanAnalytics({ dept: forced, embedded = false }) {
+  const params = useParams();
+  const dept = 'gulayan';
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const color = COLORS[dept];
+
+  useEffect(() => { let active = true; setData(null); setError(''); api.get(`/analytics/${dept}`).then(x => { if(active) setData(x); }).catch(e => { if(active) setError(e.message || 'Analytics unavailable'); }); return () => { active = false; }; }, [dept]);
+  if (error) return <div className="card analytics-error"><h3>Could not load {dept} analytics</h3><p>{error}</p><button className="btn-primary" onClick={() => window.location.reload()}>Retry</button></div>;
+  if (!data) return embedded ? <div className="empty-state">Loading...</div> : <PageHeader title={`${dept} analytics`} subtitle="Loading..." />;
+
+  // Babuyan: comparison ng batches at profit trend
+  if (dept === 'babuyan') {
+    const b = (data?.batches || []).map((x) => ({
+      label: x.label,
+      value: x.costPerKilo,
+      costPerKilo: x.costPerKilo,
+      feedToWeight: x.feedToWeight,
+      totalCost: x.totalCost,
+      netProfit: x.netProfit,
+    }));
+    return (
+      <>
+        {!embedded && <PageHeader title="Babuyan analytics" subtitle="Compare batches to decide when to sell or expand the herd." />}
+        <div className="analytics-grid">
+          <Panel title="Cost per kilo of live weight">
+            <SimpleBar data={b} color={color} format={peso} />
+          </Panel>
+          <Panel title="Feed-to-weight ratio (sacks per kilo sold)">
+            <SimpleBar data={b.map((x) => ({ label: x.label, value: x.feedToWeight }))} color="#4263eb" format={(v) => Number(v).toFixed(3)} />
+          </Panel>
+          <Panel title="Cost vs profit per batch">
+            <GroupedBar data={b} format={peso} series={[
+              { key: 'totalCost', name: 'Total cost', color: '#d63a5c' },
+              { key: 'netProfit', name: 'Net profit', color: '#14935f' },
+            ]} />
+          </Panel>
+          <Panel title="Profit trend">
+            <SimpleLine data={b.map((x) => ({ label: x.label, value: x.netProfit }))} color="#14935f" format={peso} />
+          </Panel>
+        </div>
+      </>
+    );
+  }
+
+  // Gulayan / Prutasan: ayusin ang peak days Lunes -> Linggo
+  const peak = [...(data.peak || [])].sort((a, c) => DAY_ORDER.indexOf(a.label) - DAY_ORDER.indexOf(c.label));
 
   return (
-    <div>
-      <h2>Gulayan Analytics</h2>
-
-      <h3>Best-Selling Products</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Vegetable</th>
-            <th>Total Kilos Sold</th>
-            <th>Total Sales</th>
-          </tr>
-        </thead>
-        <tbody>
-          {analytics.bestSelling.map((item, idx) => (
-            <tr key={idx}>
-              <td>{item.item_name}</td>
-              <td>{item.total_kilos} kg</td>
-              <td>{item.total_sales}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3>Peak Sales Days</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Daily Sales</th>
-          </tr>
-        </thead>
-        <tbody>
-          {analytics.peakSalesDays.map((day, idx) => (
-            <tr key={idx}>
-              <td>{day.sale_day}</td>
-              <td>{day.daily_sales}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3>Underperforming Items</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Vegetable</th>
-            <th>Total Kilos Sold</th>
-          </tr>
-        </thead>
-        <tbody>
-          {analytics.underperforming.map((item, idx) => (
-            <tr key={idx}>
-              <td>{item.item_name}</td>
-              <td>{item.total_kilos} kg</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3>Spoilage Trends</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Month</th>
-            <th>Spoiled Kilos</th>
-            <th>Spoilage Loss</th>
-          </tr>
-        </thead>
-        <tbody>
-          {analytics.spoilageTrends.map((trend, idx) => (
-            <tr key={idx}>
-              <td>{trend.month}</td>
-              <td>{trend.spoiled_kilos} kg</td>
-              <td>{trend.spoilage_loss}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3>Expense Share</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Amount</th>
-            <th>Share (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {analytics.expenseShare.map((exp, idx) => (
-            <tr key={idx}>
-              <td>{exp.category}</td>
-              <td>{exp.total_amount}</td>
-              <td>{exp.percentage}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {!embedded && <PageHeader title={`${dept} analytics`} subtitle="Based on recorded sales, spoilage, and expenses." />}
+      <div className="analytics-grid">
+        <Panel title="Best-selling products (kg)">
+          <SimpleBar data={data.best || []} color={color} horizontal format={(v) => `${v} kg`} />
+        </Panel>
+        <Panel title="Peak sales days">
+          <SimpleBar data={peak} color={color} format={peso} />
+        </Panel>
+        <Panel title="Underperforming items (kg sold)">
+          <SimpleBar data={data.under || []} color="#9aa5a0" horizontal format={(v) => `${v} kg`} />
+        </Panel>
+        <Panel title="Spoilage trend (kg per month)">
+          <SimpleLine data={data.spoil || []} color="#d63a5c" format={(v) => `${v} kg`} />
+        </Panel>
+        <Panel title="Expense share">
+          <SimplePie data={data.share || []} format={peso} />
+        </Panel>
+      </div>
+    </>
   );
-};
-
-export default GulayanAnalytics;
+}

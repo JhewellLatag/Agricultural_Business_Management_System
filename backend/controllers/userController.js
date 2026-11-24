@@ -1,177 +1,52 @@
+// WBS 4.3.1 — User Account and RBAC
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// controllers/authController.js - login at user accounts (4.3.1)
 const bcrypt = require('bcryptjs');
-const db = require('../config/db');
-const { logActivity, getAuditLogs } = require('../services/auditLogger');
+const model = require('../models/userModel');
+const { signToken } = require('../utils/auth');
+const logActivity = require('../utils/activityLog');
 
-const VALID_ROLES = ['Admin', 'Gulayan Staff', 'Prutasan Staff', 'Babuyan Staff'];
-const VALID_DEPARTMENTS = ['All', 'Gulayan', 'Prutasan', 'Babuyan'];
-
-// ==========================================
-// 4.2 USER ACCOUNT AND ROLE-BASED ACCESS (ADMIN)
-// ==========================================
-
-// Retrieve all user accounts
-exports.getAllUsers = async (req, res) => {
-  try {
-    const [users] = await db.query(
-      `SELECT id, username, full_name, department, role, status, created_at
-       FROM users
-       ORDER BY id DESC`
-    );
-    return res.status(200).json(users);
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to retrieve user accounts.', error: error.message });
+exports.login = async (req, res) => {
+  const { username, password } = req.body;
+  const [[user]] = await model.findActiveUserByUsername([username]);
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    return res.status(401).json({ message: 'Wrong username or password.' });
   }
+  res.json({ token: signToken(user), user: { id: user.id, name: user.name, role: user.role } });
 };
 
-// Admin creates a new user account with assigned department and role
+exports.listUsers = async (req, res) => {
+  const [rows] = await model.listUsers();
+  res.json(rows);
+};
+
 exports.createUser = async (req, res) => {
-  const { username, password, full_name, department, role } = req.body;
-
-  if (!username || !password || !full_name || !department || !role) {
-    return res.status(400).json({
-      message: 'All fields (username, password, full name, department, role) are required.',
-    });
-  }
-
-  if (!VALID_ROLES.includes(role) || !VALID_DEPARTMENTS.includes(department)) {
-    return res.status(400).json({ message: 'Invalid department or role assignment.' });
-  }
-
-  try {
-    const [existing] = await db.query(SELECT id FROM users WHERE username = ?, [username.trim()]);
-    if (existing.length > 0) {
-      return res.status(409).json({ message: 'Username already exists.' });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const [result] = await db.query(
-      `INSERT INTO users (username, password_hash, full_name, department, role, status)
-       VALUES (?, ?, ?, ?, ?, 'active')`,
-      [username.trim(), passwordHash, full_name.trim(), department, role]
-    );
-
-    await logActivity({
-      user: req.user || null,
-      department: 'All',
-      module_name: 'User Account Management',
-      action_type: 'ACCOUNT_CREATED',
-      record_id: result.insertId,
-      details: Created user '${username.trim()}' (${role} - ${department}),
-    });
-
-    return res.status(201).json({
-      id: result.insertId,
-      username: username.trim(),
-      full_name: full_name.trim(),
-      department,
-      role,
-      status: 'active',
-    });
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to create user account.', error: error.message });
-  }
+  const { name, username, password, role } = req.body;
+  if (!name || !username || !password || !role) return res.status(400).json({ message: 'Fill in all fields.' });
+  await model.createUser([name, username, await bcrypt.hash(password, 10), role]);
+  await logActivity(req.user, role, `Created account ${username}`);
+  res.json({ message: 'Account created.' });
 };
 
-// Admin edits user details, department, role, and optional password reset
+// Admin: edit name, role, o i-deactivate ang account. May password reset kung may bagong password (4.3.1)
 exports.updateUser = async (req, res) => {
-  const { id } = req.params;
-  const { username, full_name, department, role, password } = req.body;
+  const { name, role, active, password } = req.body;
+  const [[user]] = await model.findUserById([req.params.id]);
+  if (!user) return res.status(404).json({ message: 'Account not found.' });
+  if (password && password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+  if (!name) return res.status(400).json({ message: 'Name is required.' });
 
-  if (!username || !full_name || !department || !role) {
-    return res.status(400).json({ message: 'Username, full name, department, and role are required.' });
+  // iwas mag-deactivate o mag-demote ng sariling admin account
+  if (user.id === req.user.id && (!active || role !== 'admin')) {
+    return res.status(400).json({ message: 'You cannot deactivate or demote your own account.' });
   }
 
-  if (!VALID_ROLES.includes(role) || !VALID_DEPARTMENTS.includes(department)) {
-    return res.status(400).json({ message: 'Invalid department or role assignment.' });
+  await model.updateUser([name, role, active ? 1 : 0, user.id]);
+  if (password) {
+    if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    await model.resetUserPassword([await bcrypt.hash(password, 10), user.id]);
   }
-
-  try {
-    const [duplicate] = await db.query(
-      SELECT id FROM users WHERE username = ? AND id != ?,
-      [username.trim(), id]
-    );
-    if (duplicate.length > 0) {
-      return res.status(409).json({ message: 'Username is already taken by another user.' });
-    }
-
-    if (password && String(password).trim() !== '') {
-      const passwordHash = await bcrypt.hash(password, 10);
-      await db.query(
-        `UPDATE users
-         SET username = ?, full_name = ?, department = ?, role = ?, password_hash = ?
-         WHERE id = ?`,
-        [username.trim(), full_name.trim(), department, role, passwordHash, id]
-      );
-    } else {
-      await db.query(
-        `UPDATE users
-         SET username = ?, full_name = ?, department = ?, role = ?
-         WHERE id = ?`,
-        [username.trim(), full_name.trim(), department, role, id]
-      );
-    }
-
-    await logActivity({
-      user: req.user || null,
-      department: 'All',
-      module_name: 'User Account Management',
-      action_type: 'ACCOUNT_UPDATED',
-      record_id: id,
-      details: Updated user '${username.trim()}' (${role} - ${department}),
-    });
-
-    return res.status(200).json({ message: 'User account updated successfully.' });
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to update user account.', error: error.message });
-  }
-};
-
-// Admin deactivates or reactivates a user account
-exports.toggleUserStatus = async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-
-  if (!['active', 'deactivated'].includes(status)) {
-    return res.status(400).json({ message: 'Invalid account status.' });
-  }
-
-  if (req.user && Number(id) === Number(req.user.id) && status === 'deactivated') {
-    return res.status(400).json({ message: 'You cannot deactivate your own active Admin account.' });
-  }
-
-  try {
-    await db.query(UPDATE users SET status = ? WHERE id = ?, [status, id]);
-
-    await logActivity({
-      user: req.user || null,
-      department: 'All',
-      module_name: 'User Account Management',
-      action_type: status === 'deactivated' ? 'ACCOUNT_DEACTIVATED' : 'ACCOUNT_ACTIVATED',
-      record_id: id,
-      details: Changed user ID #${id} status to '${status}',
-    });
-
-    return res.status(200).json({ message: User account ${status}. });
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to update user status.', error: error.message });
-  }
-};
-
-// ==========================================
-// 4.4 ADMIN-ONLY SYSTEM ACTIVITY & AUDIT LOGS
-// ==========================================
-exports.getSystemAuditLogs = async (req, res) => {
-  if (req.user && req.user.role !== 'Admin') {
-    return res.status(403).json({ message: 'Admin only.' });
-  }
-
-  const { user, department, date } = req.query;
-
-  try {
-    const logs = await getAuditLogs({ user, department, date });
-    return res.status(200).json(logs);
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to retrieve system audit logs.', error: error.message });
-  }
+  await logActivity(req.user, role, `Updated account ${user.username}${password ? ' (password reset)' : ''}`);
+  res.json({ message: 'Account updated.' });
 };

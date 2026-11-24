@@ -1,0 +1,41 @@
+/* WBS 1.1, 2.1, 2.2, 3.1, 4.1, 4.2, 4.3, 4.4 — SHARED STYLES — application-wide layout
+   Assigned Member(s): All group members
+   Note: WBS references identify related interfaces; shared selectors may be reused across modules.
+*/
+/* layout.css - structure ng main area, page header, cards at toast */
+.app-shell { display: flex; min-height: 100vh; background:
+  radial-gradient(1100px 420px at 85% -120px, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%), var(--bg); transition: background 0.4s; }
+
+.main-area { flex: 1; padding: 40px 48px 64px; max-width: 1280px; animation: pageIn 0.45s var(--ease); }
+@keyframes pageIn { from { opacity: 0; transform: translateY(8px); } }
+
+.page-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 28px; }
+.page-header h1 { font-size: 2.35rem; line-height: 1.05; letter-spacing: -0.035em; font-weight: 800; }
+.page-header p { color: var(--muted); margin-top: 8px; font-size: 1rem; max-width: 56ch; }
+
+/* Card - ginagamit sa lahat ng box */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 26px;
+  box-shadow: var(--shadow);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  margin-bottom: 22px;
+  transition: box-shadow 0.3s var(--ease), border-color 0.3s;
+}
+.card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-lg); }
+.card h3 { margin-bottom: 16px; font-size: 1.15rem; }
+
+/* Notification na mawawala mag-isa */
+.toast {
+  position: fixed; top: 24px; right: 24px; z-index: 80; max-width: min(420px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(16, 28, 22, 0.92); backdrop-filter: blur(14px); color: #fff; padding: 14px 20px 14px 16px; border-radius: 16px;
+  font-weight: 600; box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255, 255, 255, 0.08); animation: toast 4s var(--ease) forwards;
+}
+.toast::before { content: ''; flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 30%, transparent); }
+@keyframes toast {
+  0% { opacity: 0; transform: translateX(40px) scale(0.97); }
+  8%, 90% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateX(40px); }
+}

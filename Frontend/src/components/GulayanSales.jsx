@@ -1,100 +1,102 @@
-import React, { useState } from 'react';
-import api from '../services/api';
+// WBS 1.1.1 — Gulayan Sales Recording ONLY
+// Assigned Member: John Adrian Alvarez
+// WBS 1.1.1–1.1.4 — Department Sales UI
+// Assigned Member(s): John Adrian Alvarez
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Sales.jsx - sales recording at listahan (1.1)
+// Gulayan/Prutasan: pumili ng product. Babuyan (Admin): pumili ng batch.
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { api, peso } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import DataTable from './DataTable.jsx';
+import '../styles/forms.css';
 
-const GulayanSales = () => {
-  const [vegetable, setVegetable] = useState('');
-  const [kilos, setKilos] = useState('');
-  const [pricePerKilo, setPricePerKilo] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
-  const [isReviewing, setIsReviewing] = useState(false);
+export default function GulayanSales({ dept: forced, embedded = false }) {
+  const params = useParams();
+  const dept = 'gulayan';
+  const isHog = dept === 'babuyan';
 
-  const handleReview = (e) => {
+  const [sales, setSales] = useState([]);
+  const [options, setOptions] = useState([]); // products o batches
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState({ from: '', to: '' }); // date filter
+  const [msg, setMsg] = useState('');
+  const empty = { target: '', kilos: '', price: '' };
+  const [form, setForm] = useState(empty);
+
+  const loadSales = () => api.get(`/sales/${dept}?search=${encodeURIComponent(search)}${range.from ? `&from=${range.from}` : ''}${range.to ? `&to=${range.to}` : ''}`).then(setSales).catch((e) => setMsg(e.message));
+
+  useEffect(() => {
+    loadSales();
+    // listahan ng pwedeng ibenta
+    (isHog ? api.get('/batches') : api.get(`/inventory/${dept}`)).then(setOptions).catch(() => {});
+  }, [dept, search, range]);
+
+  // preview ng total bago i-save
+  const total = Number(form.kilos || 0) * Number(form.price || 0);
+
+  const submit = async (e) => {
     e.preventDefault();
-    setIsReviewing(true);
+    try {
+      const r = await api.post('/sales', {
+        department: dept,
+        item_id: isHog ? null : form.target,
+        batch_id: isHog ? form.target : null,
+        kilos: Number(form.kilos),
+        price_per_kilo: Number(form.price),
+        payment_method: 'Cash',
+      });
+      setMsg(`${r.message} Total ${peso(r.total)}`);
+      setForm(empty);
+      loadSales();
+    } catch (err) {
+      setMsg(err.message);
+    }
   };
 
-  const handleSubmit = async () => {
-    const date = new Date().toISOString().split('T')[0];
-    const totalAmount = Number(kilos) * Number(pricePerKilo);
-
-    await api.post('/gulayan/sales', {
-      vegetable,
-      kilos,
-      price_per_kilo: pricePerKilo,
-      payment_method: paymentMethod,
-      date,
-      total_amount: totalAmount,
-    });
-
-    setVegetable('');
-    setKilos('');
-    setPricePerKilo('');
-    setPaymentMethod('');
-    setIsReviewing(false);
-  };
+  const columns = [
+    { key: 'sold_at', label: 'Date', render: (r) => new Date(r.sold_at).toLocaleDateString() },
+    { key: 'product', label: 'Product' },
+    { key: 'kilos', label: 'Kilos' },
+    { key: 'price_per_kilo', label: 'Price per kilo', render: (r) => peso(r.price_per_kilo) },
+    { key: 'payment_method', label: 'Payment' },
+    { key: 'total', label: 'Total', render: (r) => <strong>{peso(r.total)}</strong> },
+  ];
 
   return (
-    <div>
-      {!isReviewing ? (
-        <form onSubmit={handleReview}>
-          <div>
-            <label>Vegetable</label>
-            <select value={vegetable} onChange={(e) => setVegetable(e.target.value)} required>
-              <option value="">Select vegetable</option>
-              <option value="Kamatis">Kamatis</option>
-              <option value="Sibuyas">Sibuyas</option>
-              <option value="Talong">Talong</option>
-              <option value="Repolyo">Repolyo</option>
-            </select>
-          </div>
+    <>
+      {!embedded && <PageHeader title={`${dept} sales`} subtitle={isHog ? 'Record hog sales by live weight.' : 'Record sales per kilo.'} />}
+      {msg && <div className="toast" onAnimationEnd={() => setMsg('')}>{msg}</div>}
 
-          <div>
-            <label>Kilos</label>
-            <input
-              type="number"
-              step="0.01"
-              value={kilos}
-              onChange={(e) => setKilos(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label>Price per Kilo</label>
-            <input
-              type="number"
-              step="0.01"
-              value={pricePerKilo}
-              onChange={(e) => setPricePerKilo(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label>Payment Method</label>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} required>
-              <option value="">Select payment method</option>
-              <option value="Cash">Cash</option>
-              <option value="GCash">GCash</option>
-              <option value="Bank Transfer">Bank Transfer</option>
-            </select>
-          </div>
-
-          <button type="submit">Review</button>
-        </form>
-      ) : (
-        <div>
-          <p>Vegetable: {vegetable}</p>
-          <p>Kilos: {kilos}</p>
-          <p>Price per Kilo: {pricePerKilo}</p>
-          <p>Payment Method: {paymentMethod}</p>
-
-          <button type="button" onClick={() => setIsReviewing(false)}>Back</button>
-          <button type="button" onClick={handleSubmit}>Submit</button>
+      <form className="card sale-form" onSubmit={submit}>
+        <h3>{isHog ? 'Add hog sale' : 'Add sale'}</h3>
+        <div className="row">
+          <select value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })}>
+            <option value="">{isHog ? 'Choose batch' : 'Choose product'}</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {isHog ? `Batch #${o.id} (${o.heads} heads)` : `${o.name} (${o.quantity} kg left)`}
+              </option>
+            ))}
+          </select>
+          <input type="number" placeholder={isHog ? 'Live weight (kg)' : 'Kilos'} value={form.kilos} onChange={(e) => setForm({ ...form, kilos: e.target.value })} />
+          <input type="number" placeholder="Price per kilo" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
         </div>
-      )}
-    </div>
-  );
-};
+        <div className="row between">
+          <span className="total-preview">Total: <strong>{peso(total)}</strong></span>
+          <button className="btn-primary">Save sale</button>
+        </div>
+      </form>
 
-export default GulayanSales;
+      <div className="card">
+        <div className="filter-row">
+          <input placeholder="Search product..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input type="date" title="From" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+          <input type="date" title="To" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+        </div>
+        <DataTable columns={columns} rows={sales} empty="No sales yet." />
+      </div>
+    </>
+  );
+}

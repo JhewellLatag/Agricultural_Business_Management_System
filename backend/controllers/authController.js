@@ -1,113 +1,52 @@
+// WBS 4.3.1 — User Account and RBAC
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// controllers/authController.js - login at user accounts (4.3.1)
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const db = require('../config/db');
+const model = require('../models/authModel');
+const { signToken } = require('../utils/auth');
+const logActivity = require('../utils/activityLog');
 
-// Helper: Determine target route per role (4.1 & 4.3)
-const getRedirectRouteByRole = (role) => {
-  switch (role) {
-    case 'Admin':
-      return '/admin/gulayan/inventory'; // Route Admin directly to full menu (no dashboard)
-    case 'Gulayan Staff':
-      return '/gulayan-staff';
-    case 'Prutasan Staff':
-      return '/prutasan-staff';
-    case 'Babuyan Staff':
-      return '/babuyan-staff';
-    default:
-      return '/login';
-  }
-};
-
-// ==========================================
-// 4.1 & 4.3 LOGIN AND ROLE-BASED ROUTING
-// ==========================================
 exports.login = async (req, res) => {
   const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Username and password are required.' });
+  const [[user]] = await model.findActiveUserByUsername([username]);
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    return res.status(401).json({ message: 'Wrong username or password.' });
   }
-
-  try {
-    const [users] = await db.query(
-      `SELECT id, username, password_hash, full_name, department, role, status
-       FROM users
-       WHERE username = ?
-       LIMIT 1`,
-      [username]
-    );
-
-    if (users.length === 0) {
-      return res.status(401).json({ message: 'Invalid username or password.' });
-    }
-
-    const user = users[0];
-
-    if (user.status !== 'active') {
-      return res.status(403).json({
-        message: 'Your account has been deactivated. Please contact the Admin.',
-      });
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Invalid username or password.' });
-    }
-
-    const token = jwt.sign(
-      {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        status: user.status,
-      },
-      process.env.JWT_SECRET || 'farm_management_secret_key',
-      { expiresIn: '8h' }
-    );
-
-    const redirectTo = getRedirectRouteByRole(user.role);
-
-    res.status(200).json({
-      message: 'Login successful.',
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        full_name: user.full_name,
-        department: user.department,
-        role: user.role,
-        status: user.status,
-      },
-      redirectTo,
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Login failed.', error: error.message });
-  }
+  res.json({ token: signToken(user), user: { id: user.id, name: user.name, role: user.role } });
 };
 
-exports.getSession = async (req, res) => {
-  try {
-    const [users] = await db.query(
-      `SELECT id, username, full_name, department, role, status
-       FROM users
-       WHERE id = ?
-       LIMIT 1`,
-      [req.user.id]
-    );
-
-    if (users.length === 0 || users[0].status !== 'active') {
-      return res.status(403).json({ message: 'Session invalid or account deactivated.' });
-    }
-
-    res.status(200).json({
-      user: users[0],
-      redirectTo: getRedirectRouteByRole(users[0].role),
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to verify session.', error: error.message });
-  }
+exports.listUsers = async (req, res) => {
+  const [rows] = await model.listUsers();
+  res.json(rows);
 };
 
-exports.logout = (req, res) => {
-  res.status(200).json({ message: 'Logged out successfully.' });
+exports.createUser = async (req, res) => {
+  const { name, username, password, role } = req.body;
+  if (!name || !username || !password || !role) return res.status(400).json({ message: 'Fill in all fields.' });
+  await model.createUser([name, username, await bcrypt.hash(password, 10), role]);
+  await logActivity(req.user, role, `Created account ${username}`);
+  res.json({ message: 'Account created.' });
+};
+
+// Admin: edit name, role, o i-deactivate ang account. May password reset kung may bagong password (4.3.1)
+exports.updateUser = async (req, res) => {
+  const { name, role, active, password } = req.body;
+  const [[user]] = await model.findUserById([req.params.id]);
+  if (!user) return res.status(404).json({ message: 'Account not found.' });
+  if (password && password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+  if (!name) return res.status(400).json({ message: 'Name is required.' });
+
+  // iwas mag-deactivate o mag-demote ng sariling admin account
+  if (user.id === req.user.id && (!active || role !== 'admin')) {
+    return res.status(400).json({ message: 'You cannot deactivate or demote your own account.' });
+  }
+
+  await model.updateUser([name, role, active ? 1 : 0, user.id]);
+  if (password) {
+    if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    await model.resetUserPassword([await bcrypt.hash(password, 10), user.id]);
+  }
+  await logActivity(req.user, role, `Updated account ${user.username}${password ? ' (password reset)' : ''}`);
+  res.json({ message: 'Account updated.' });
 };

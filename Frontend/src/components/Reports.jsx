@@ -1,296 +1,128 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 1.1.5, 2.2.4, 3.1.4, 4.1.1–4.1.3 — Reports UI
+// Assigned Member(s): John Adrian Alvarez, Miguel Justin Javier, Ivan Lanaria, Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Reports.jsx - lahat ng reports (4.1, 1.1.5, 2.2.4, 3.1.4)
+// Print = browser print. PDF at Excel = totoong file galing sa backend.
+import { useEffect, useState } from 'react';
+import { api, peso, downloadFile } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import DataTable from './DataTable.jsx';
+import '../styles/forms.css';
+import '../styles/reports.css';
+import DeptTabs from './DeptTabs.jsx';
 
-const Reports = () => {
-  const [department, setDepartment] = useState('Gulayan');
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+// Isang "section" = { title, columns: [labels], rows: [[values]] }
+// Ito ang ginagamit pareho sa screen at sa export, kaya laging magkapareho.
+const kv = (title, pairs) => ({ title, columns: ['Item', 'Value'], rows: pairs });
 
-  // Gulayan state (1.8 & 1.9)
-  const [gulayanSummary, setGulayanSummary] = useState(null);
-  const [gulayanMonthlyReport, setGulayanMonthlyReport] = useState(null);
+export default function Reports() {
+  const [dept, setDept] = useState('gulayan');
+  const [kind, setKind] = useState('monthly'); // monthly | sales | expenses
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [batches, setBatches] = useState([]);
+  const [batchId, setBatchId] = useState('');
+  const [sections, setSections] = useState([]);
+  const [msg, setMsg] = useState('');
+  const isHog = dept === 'babuyan';
 
-  // Prutasan state (2.8 & 2.9)
-  const [prutasanSummary, setPrutasanSummary] = useState(null);
-  const [prutasanMonthlyReport, setPrutasanMonthlyReport] = useState(null);
+  useEffect(() => { if (isHog) api.get('/batches').then(setBatches); }, [dept]);
 
+  // buuin ang report sections ayon sa napiling dept at uri ng report
   useEffect(() => {
-    const loadReports = async () => {
-      if (department === 'Gulayan') {
-        const [summaryRes, monthlyRes] = await Promise.all([
-          api.get(`/reports/gulayan-summary?month=${month}`),
-          api.get(`/reports/gulayan-monthly?month=${month}`),
-        ]);
-        setGulayanSummary(summaryRes.data);
-        setGulayanMonthlyReport(monthlyRes.data);
-      } else if (department === 'Prutasan') {
-        const [summaryRes, monthlyRes] = await Promise.all([
-          api.get(`/reports/prutasan-summary?month=${month}`),
-          api.get(`/reports/prutasan-monthly?month=${month}`),
-        ]);
-        setPrutasanSummary(summaryRes.data);
-        setPrutasanMonthlyReport(monthlyRes.data);
+    setSections([]);
+    const build = async () => {
+      if (kind === 'monthly' && !isHog) {
+        const m = await api.get(`/reports/monthly/${dept}?month=${month}`);
+        return [
+          kv(`${dept} monthly report - ${month}`, [
+            ['Sales', peso(m.sales)], ['Cost of goods sold', peso(m.cogs)], ['Expenses', peso(m.expenses)],
+            ['Spoilage loss', peso(m.spoilageLoss)], ['Stock in (kg)', m.stockIn], ['Stock out (kg)', m.stockOut],
+            ['Spoiled (kg)', m.spoiled], ['Net profit', peso(m.netProfit)],
+          ]),
+          { title: 'Expenses by category', columns: ['Category', 'Total'], rows: m.expenseByCategory.map((c) => [c.category, peso(c.total)]) },
+        ];
       }
+      if (kind === 'monthly' && isHog) {
+        if (!batchId) return [];
+        const b = await api.get(`/reports/batch/${batchId}`);
+        return [
+          kv(`Babuyan batch #${batchId} report`, [
+            ['Capital', peso(b.capital)], ['Feed', peso(b.feed)], ['Medicine / vet', peso(b.medicine)],
+            ['Other expenses', peso(b.other)], ['Total raising cost', peso(b.totalCost)],
+            ['Live weight sold (kg)', b.kilosSold], ['Income', peso(b.income)], ['Cost per kilo', peso(b.costPerKilo)],
+            ['Net profit', peso(b.netProfit)], ['Latest average weight (kg)', b.latestWeight],
+            ['Mortality (heads)', b.mortality], ['Vaccinations', b.vaccinations],
+          ]),
+          { title: 'Feeds, medicine, and vitamins used', columns: ['Item', 'Quantity'], rows: b.usage.map((u) => [u.name, `${u.qty} ${u.unit}`]) },
+        ];
+      }
+      if (kind === 'sales') {
+        const s = await api.get(`/reports/sales/${dept}?month=${month}`);
+        if (isHog) return [{ title: 'Hog sales per batch', columns: ['Batch', 'Live weight (kg)', 'Income'], rows: s.rows.map((r) => [`#${r.batch_id}`, r.kilos, peso(r.income)]) }];
+        const tot = s.rows.reduce((a, r) => ({ kilos: a.kilos + r.kilos, total: a.total + r.total, cogs: a.cogs + r.cogs }), { kilos: 0, total: 0, cogs: 0 });
+        return [{
+          title: `${dept} sales summary - ${month}`,
+          columns: ['Product', 'Transactions', 'Kilos', 'Sales', 'Cost of goods'],
+          rows: [...s.rows.map((r) => [r.product, r.transactions, r.kilos, peso(r.total), peso(r.cogs)]), ['TOTAL', '', tot.kilos, peso(tot.total), peso(tot.cogs)]],
+        }];
+      }
+      // expenses
+      const e = await api.get(`/reports/expenses/${dept}?month=${month}`);
+      const out = [{ title: `${dept} expenses by category - ${month}`, columns: ['Category', 'Total'],
+        rows: [...e.byCategory.map((c) => [c.category, peso(c.total)]), ['TOTAL', peso(e.byCategory.reduce((a, c) => a + c.total, 0))]] }];
+      if (isHog) out.push({ title: 'Expenses per batch', columns: ['Batch', 'Category', 'Total'], rows: e.byBatch.map((r) => [`#${r.batch_id}`, r.category, peso(r.total)]) });
+      return out;
     };
-    loadReports();
-  }, [department, month]);
+    build().then(setSections).catch((e) => setMsg(e.message));
+  }, [dept, kind, month, batchId]);
 
-  // Shared print and export (PDF & Excel) engine (4.5)
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleExportPDF = async () => {
-    const payload =
-      department === 'Gulayan'
-        ? { reportType: 'gulayan', month, summary: gulayanSummary, monthlyReport: gulayanMonthlyReport }
-        : { reportType: 'prutasan', month, summary: prutasanSummary, monthlyReport: prutasanMonthlyReport };
-
-    const res = await api.post('/reports/export/pdf', payload, { responseType: 'blob' });
-    const url = window.URL.createObjectURL(new Blob([res.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${department}_Report_${month}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-  };
-
-  const handleExportExcel = async () => {
-    const payload =
-      department === 'Gulayan'
-        ? { reportType: 'gulayan', month, summary: gulayanSummary, monthlyReport: gulayanMonthlyReport }
-        : { reportType: 'prutasan', month, summary: prutasanSummary, monthlyReport: prutasanMonthlyReport };
-
-    const res = await api.post('/reports/export/excel', payload, { responseType: 'blob' });
-    const url = window.URL.createObjectURL(new Blob([res.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${department}_Report_${month}.xlsx`);
-    document.body.appendChild(link);
-    link.click();
-  };
+  const title = `${dept} ${kind} report ${isHog && kind === 'monthly' ? `batch ${batchId}` : month}`;
+  const exportAs = (format) => downloadFile('/reports/export', { format, title, sections }, `${title.replace(/\s+/g, '-')}.${format === 'pdf' ? 'pdf' : 'xlsx'}`)
+    .catch((e) => setMsg(e.message));
 
   return (
-    <div>
-      <h2>Department Reports</h2>
+    <>
+      <PageHeader title="Reports" subtitle="Monthly, sales, expense, and per-batch reports.">
+        <div className="no-print">
+          <button className="btn-ghost" onClick={() => window.print()}>Print</button>{' '}
+          <button className="btn-ghost" disabled={!sections.length} onClick={() => exportAs('pdf')}>Export PDF</button>{' '}
+          <button className="btn-primary" disabled={!sections.length} onClick={() => exportAs('xlsx')}>Export Excel</button>
+        </div>
+      </PageHeader>
+      {msg && <div className="toast" onAnimationEnd={() => setMsg('')}>{msg}</div>}
 
-      <div>
-        <label>Select Department: </label>
-        <select value={department} onChange={(e) => setDepartment(e.target.value)}>
-          <option value="Gulayan">Gulayan</option>
-          <option value="Prutasan">Prutasan</option>
-        </select>
-
-        <label style={{ marginLeft: '12px' }}>Select Month: </label>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-        />
+      <DeptTabs value={dept} onChange={(next) => { setDept(next); setBatchId(''); }} options={[["gulayan","Gulayan"],["prutasan","Prutasan"],["babuyan","Babuyan"]]} />
+      <div className="tabs no-print">
+        {[['monthly', isHog ? 'Batch report' : 'Monthly report'], ['sales', 'Sales summary'], ['expenses', 'Expense summary']].map(([k, label]) => (
+          <button key={k} className={`tab small ${kind === k ? 'active' : ''}`} onClick={() => setKind(k)}>{label}</button>
+        ))}
       </div>
 
-      <div style={{ marginTop: '10px' }}>
-        <button type="button" onClick={handlePrint}>Print</button>
-        <button type="button" onClick={handleExportPDF}>Export PDF</button>
-        <button type="button" onClick={handleExportExcel}>Export Excel</button>
+      <div className="card report-sheet">
+        <h2>{title}</h2>
+        <div className="no-print" style={{ marginBottom: 16 }}>
+          {isHog && kind === 'monthly' ? (
+            <select value={batchId} onChange={(e) => setBatchId(e.target.value)} style={{ maxWidth: 260 }}>
+              <option value="">Choose batch</option>
+              {batches.map((b) => <option key={b.id} value={b.id}>Batch #{b.id}</option>)}
+            </select>
+          ) : !(isHog && kind === 'sales') && (
+            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ maxWidth: 220 }} />
+          )}
+        </div>
+
+        {sections.length === 0 && <div className="empty-state">{isHog && kind === 'monthly' ? 'Choose a batch to see the report.' : 'Loading...'}</div>}
+        {sections.map((sec) => (
+          <div key={sec.title} style={{ marginBottom: 24 }}>
+            <h3>{sec.title}</h3>
+            <DataTable
+              empty="No records for this selection."
+              columns={sec.columns.map((c, i) => ({ key: String(i), label: c, render: (r) => r[i] }))}
+              rows={sec.rows.map((r, i) => Object.assign([...r], { id: i }))}
+            />
+          </div>
+        ))}
       </div>
-
-      {/* ========================================== */}
-      {/* GULAYAN REPORTS (1.8 & 1.9)                */}
-      {/* ========================================== */}
-      {department === 'Gulayan' && gulayanSummary && (
-        <div>
-          <h3>Gulayan Sales and Expense Summary ({gulayanSummary.month})</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Total Kilos Sold</th>
-                <th>Total Sales</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>{gulayanSummary.salesSummary?.total_kilos_sold} kg</td>
-                <td>{gulayanSummary.salesSummary?.total_sales}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Expense Category</th>
-                <th>Total Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gulayanSummary.expenseByCategory.map((item, idx) => (
-                <tr key={idx}>
-                  <td>{item.category}</td>
-                  <td>{item.category_total}</td>
-                </tr>
-              ))}
-              <tr>
-                <td><strong>Total Expenses</strong></td>
-                <td><strong>{gulayanSummary.totalExpenses}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {department === 'Gulayan' && gulayanMonthlyReport && (
-        <div>
-          <h3>Gulayan Monthly Report ({gulayanMonthlyReport.month})</h3>
-          <table>
-            <tbody>
-              <tr>
-                <td>Sales</td>
-                <td>{gulayanMonthlyReport.sales}</td>
-              </tr>
-              <tr>
-                <td>Cost of Goods Sold</td>
-                <td>{gulayanMonthlyReport.costOfGoodsSold}</td>
-              </tr>
-              <tr>
-                <td>Expenses</td>
-                <td>{gulayanMonthlyReport.expenses}</td>
-              </tr>
-              <tr>
-                <td>Spoilage Loss ({gulayanMonthlyReport.spoilage.total_kilos} kg)</td>
-                <td>{gulayanMonthlyReport.spoilage.total_loss}</td>
-              </tr>
-              <tr>
-                <td><strong>Net Profit</strong></td>
-                <td><strong>{gulayanMonthlyReport.netProfit}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <h4>Stock Movement ({gulayanMonthlyReport.month})</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Item</th>
-                <th>Movement Type</th>
-                <th>Kilos</th>
-                <th>Spoilage Loss</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gulayanMonthlyReport.stockMovements.map((m, idx) => (
-                <tr key={idx}>
-                  <td>{m.movement_date}</td>
-                  <td>{m.item_name}</td>
-                  <td>{m.movement_type}</td>
-                  <td>{m.kilos} kg</td>
-                  <td>{m.spoilage_loss}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* PRUTASAN REPORTS (2.8 & 2.9)               */}
-      {/* ========================================== */}
-      {department === 'Prutasan' && prutasanSummary && (
-        <div>
-          <h3>Prutasan Sales and Expense Summary ({prutasanSummary.month})</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Total Kilos Sold</th>
-                <th>Total Sales</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>{prutasanSummary.salesSummary?.total_kilos_sold} kg</td>
-                <td>{prutasanSummary.salesSummary?.total_sales}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Expense Category</th>
-                <th>Total Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {prutasanSummary.expenseByCategory.map((item, idx) => (
-                <tr key={idx}>
-                  <td>{item.category}</td>
-                  <td>{item.category_total}</td>
-                </tr>
-              ))}
-              <tr>
-                <td><strong>Total Expenses</strong></td>
-                <td><strong>{prutasanSummary.totalExpenses}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {department === 'Prutasan' && prutasanMonthlyReport && (
-        <div>
-          <h3>Prutasan Monthly Report ({prutasanMonthlyReport.month})</h3>
-          <table>
-            <tbody>
-              <tr>
-                <td>Sales</td>
-                <td>{prutasanMonthlyReport.sales}</td>
-              </tr>
-              <tr>
-                <td>Cost of Goods Sold</td>
-                <td>{prutasanMonthlyReport.costOfGoodsSold}</td>
-              </tr>
-              <tr>
-                <td>Expenses</td>
-                <td>{prutasanMonthlyReport.expenses}</td>
-              </tr>
-              <tr>
-                <td>Spoilage Loss ({prutasanMonthlyReport.spoilage.total_kilos} kg)</td>
-                <td>{prutasanMonthlyReport.spoilage.total_loss}</td>
-              </tr>
-              <tr>
-                <td><strong>Net Profit</strong></td>
-                <td><strong>{prutasanMonthlyReport.netProfit}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <h4>Stock Movement ({prutasanMonthlyReport.month})</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Item</th>
-                <th>Movement Type</th>
-                <th>Kilos</th>
-                <th>Spoilage Loss</th>
-              </tr>
-            </thead>
-            <tbody>
-              {prutasanMonthlyReport.stockMovements.map((m, idx) => (
-                <tr key={idx}>
-                  <td>{m.movement_date}</td>
-                  <td>{m.item_name}</td>
-                  <td>{m.movement_type}</td>
-                  <td>{m.kilos} kg</td>
-                  <td>{m.spoilage_loss}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+    </>
   );
-};
-
-export default Reports;
+}
