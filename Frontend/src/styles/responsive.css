@@ -1,0 +1,112 @@
+/* WBS 1.1, 2.1, 2.2, 3.1, 4.1, 4.2, 4.3, 4.4 — SHARED STYLES — mobile and tablet responsive rules
+   Assigned Member(s): All group members
+   Note: WBS references identify related interfaces; shared selectors may be reused across modules.
+*/
+/* responsive.css - para sa phone at tablet.
+   Naka-import ito sa dulo ng main.jsx para siya ang nananaig.
+   Breakpoints: 1024px pababa = tablet (drawer menu), 700px pababa = phone (cards, bottom menu). */
+
+/* "clip" ang gamit, hindi "hidden". Ang "hidden" ang sumisira sa sticky kaya
+   umaalis ang sidebar kapag nag-scroll. Ang "clip" ay hindi gumagawa ng scroll container. */
+html, body { max-width: 100%; overflow-x: clip; }
+* { -webkit-tap-highlight-color: transparent; }
+.main-area { min-width: 0; } /* para hindi lumampas ang malalapad na table */
+
+/* Mga elementong para lang sa phone/tablet, nakatago sa desktop */
+.mobile-bar, .scrim, .close-btn { display: none; }
+
+/* ============ TABLET AT PHONE: drawer menu ============ */
+@media (max-width: 1024px) {
+  .app-shell { display: block; }
+
+  .mobile-bar {
+    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 30;
+    padding: 10px 16px; background: linear-gradient(90deg, var(--side-bg-2) -30%, var(--side-bg) 60%); color: #fff; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; box-shadow: 0 10px 24px -16px rgba(0,0,0,.6);
+  }
+  .menu-btn { width: 46px; height: 46px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 1.5rem; transition: background 0.2s; }
+  .menu-btn:active { background: rgba(255, 255, 255, 0.28); }
+
+  /* Ang sidebar ay nagiging drawer na lumalabas sa kaliwa */
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; height: 100%; min-height: 0;
+    width: 290px; max-width: 86vw; z-index: 50;
+    transform: translateX(-105%); transition: transform 0.3s ease; box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+  }
+  .sidebar.open { transform: none; }
+  .close-btn { display: block; position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 10px; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 1.6rem; }
+  .scrim { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; animation: fadeIn 0.25s; }
+  @keyframes fadeIn { from { opacity: 0; } }
+
+  .main-area { padding: 24px 22px 48px; max-width: none; }
+  .page-header { flex-wrap: wrap; gap: 12px; }
+  .page-actions .no-print { display: flex; flex-wrap: wrap; gap: 8px; }
+}
+
+/* ============ PHONE ============ */
+@media (max-width: 700px) {
+  .main-area { padding: 16px 14px 48px; }
+  .page-header { flex-direction: column; align-items: flex-start; }
+  .page-header h1 { font-size: 1.7rem; }
+  .page-actions, .page-actions .no-print { width: 100%; }
+  .page-actions .no-print button { flex: 1; }
+  .card { padding: 16px; border-radius: 14px; }
+  .card:hover { transform: none; }
+
+  /* Malalaking tap targets at 16px na text para hindi mag-zoom ang iPhone */
+  button, .btn-primary, .btn-danger, .btn-ghost { min-height: 46px; }
+  input, select { font-size: 16px !important; min-height: 46px; }
+  .btn-link { min-height: 40px; }
+
+  /* Forms: isang column lahat */
+  .sale-form .row > * { min-width: 100%; }
+  .sale-form .row.between { flex-direction: column; align-items: stretch; gap: 12px; }
+  .sale-form .row.between > * { flex: 1 1 auto; }
+  .filter-row > * { min-width: 100%; }
+  .health-form { flex-wrap: wrap; }
+  .health-form > * { min-width: 100%; }
+
+  .toast { left: 12px; right: 12px; top: 12px; text-align: center; }
+
+  /* Tabs at chips: pwedeng i-swipe pakaliwa/pakanan */
+  .tabs, .chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+  .tab, .chip { flex: 0 0 auto; }
+
+  /* Tables: ang bawat row ay nagiging card */
+  .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
+  .data-table thead { display: none; }
+  .data-table tbody tr { border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px; margin-bottom: 12px; background: #fff; }
+  .data-table tbody tr:hover { transform: none; background: #fff; }
+  .data-table td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); text-align: right; }
+  .data-table td:last-child { border-bottom: none; }
+  .data-table td:empty { display: none; }
+  .data-table td::before { content: attr(data-label); flex: 0 0 38%; font-weight: 700; font-size: 0.8rem; color: var(--muted); text-align: left; }
+  .data-table td[data-label='']::before { display: none; }
+  .data-table td[data-label=''] { justify-content: flex-end; }
+  .data-table td input, .data-table td select { width: 100% !important; }
+  .row-actions { flex-wrap: wrap; justify-content: flex-end; }
+
+  .batch-grid, .form-grid, .analytics-grid { grid-template-columns: 1fr; }
+  .login-card { padding: 28px 22px; }
+
+  /* ===== Staff: menu sa ilalim ng screen (madaling abutin ng hinlalaki) ===== */
+  .staff-top, .staff-prutasan .staff-top { padding: 10px 14px; gap: 12px; justify-content: space-between; flex-wrap: nowrap; }
+  .staff-nav, .staff-prutasan .staff-nav, .staff-babuyan .staff-nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; flex: initial; flex-direction: row; margin: 0;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); gap: 6px;
+    background: var(--side-bg); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .staff-link { flex: 1; text-align: center; padding: 12px 6px; font-size: 0.85rem; border-radius: 12px; }
+  .staff-banner, .staff-babuyan .staff-banner { padding: 20px 16px; }
+  .staff-banner h2 { font-size: 1.6rem; }
+  .staff-main, .staff-babuyan .staff-main { padding: 18px 14px 110px; }
+
+  /* Babuyan: balik sa taas ang bar, hindi na nasa gilid */
+  .staff-babuyan { display: block; }
+  .staff-babuyan .staff-top { flex-direction: row; align-items: center; height: auto; position: sticky; padding: 10px 14px; }
+}
+
+/* Tablet: mas maluwag pa rin ang staff layout */
+@media (min-width: 701px) and (max-width: 1024px) {
+  .staff-main { padding: 24px 20px; }
+  .staff-babuyan { grid-template-columns: 210px 1fr; }
+}

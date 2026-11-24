@@ -1,0 +1,1 @@
+Place your own photos here. Example: Mangga -> mangga.jpg, Sibuyas Pula -> sibuyas-pula.png. Supported: png, jpg, jpeg, webp. Use lowercase filenames and hyphens instead of spaces. Refresh the browser.

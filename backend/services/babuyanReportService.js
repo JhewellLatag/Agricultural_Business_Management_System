@@ -1,136 +1,84 @@
-const db = require('../config/db');
+// WBS 4.1.1–4.2.3 — Reports and Analytics Calculations
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// services/reportService.js - monthly reports, batch reports, at analytics (4.1, 4.2)
+const model = require('../models/babuyanReportServiceModel');
+const { batchProfit, monthlyReport } = require('./profitService');
 
-// ==========================================
-// 3.7 BABUYAN PER-BATCH REPORTS
-// ==========================================
-exports.getBabuyanPerBatchReports = async (batchId = null) => {
-  let batchQuery = `
-    SELECT id, batch_id, batch_name, purchase_date, number_of_heads, capital_cost, expected_selling_date
-    FROM pig_batches
-  `;
-  const params = [];
+const num = (v) => Number(v || 0);
 
-  if (batchId) {
-    batchQuery +=  WHERE batch_id = ?;
-    params.push(batchId);
-  }
+// Monthly report ng Gulayan / Prutasan
+async function monthlyFull(dept, month) {
+  const base = await monthlyReport(dept, month);
+  const [[mv]] = await model.getMonthlyStockMovement([dept, `${month}%`]);
+  const [cats] = await model.getMonthlyExpensesByCategory([dept, `${month}%`]);
+  return { ...base, stockIn: num(mv.stockIn), stockOut: num(mv.stockOut), spoiled: num(mv.spoiled), expenseByCategory: cats };
+}
 
-  batchQuery +=  ORDER BY purchase_date DESC, id DESC;
+// Per-batch report ng Babuyan: profit + health + nagamit na feeds/medicine
+async function batchReport(id) {
+  const profit = await batchProfit(id);
+  if (!profit) return null;
+  const [[w]] = await model.getLatestBatchWeight([id]);
+  const [[m]] = await model.getBatchMortalityTotal([id]);
+  const [[v]] = await model.getBatchVaccinationCount([id]);
+  const [usage] = await model.getBatchUsageSummary([id]);
+  return { ...profit, latestWeight: w ? num(w.value) : 0, mortality: num(m.dead), vaccinations: v.n, usage };
+}
 
-  const [batches] = await db.query(batchQuery, params);
-  const reports = [];
+// Analytics ng Gulayan / Prutasan
+async function deptAnalytics(dept) {
+  const [best] = await model.getTopSellingProducts([dept]);
+  // underperforming = pinakakaunting benta (kasama ang walang benta)
+  const [under] = await model.getSlowMovingProducts([dept]);
+  const [peak] = await model.getSalesByWeekday([dept]);
+  const [spoil] = await model.getMonthlySpoilageTrend([dept]);
+  const [share] = await model.getExpenseBreakdown([dept]);
+  return { best, under, peak, spoil, share };
+}
 
-  for (const batch of batches) {
-    const bId = batch.batch_id;
-    const capitalCost = Number(batch.capital_cost || 0);
-
-    // 1. Per-batch expense summary by category (feed, veterinary care/medicine, labor, utilities)
-    const [expenseCategories] = await db.query(
-      `SELECT category, COALESCE(SUM(amount), 0) AS category_total
-       FROM expenses
-       WHERE department = 'Babuyan' AND batch_id = ?
-       GROUP BY category`,
-      [bId]
-    );
-
-    const feedCost = Number(
-      expenseCategories.find((e) => e.category === 'feed')?.category_total || 0
-    );
-    const medicineCost = Number(
-      expenseCategories.find((e) => e.category === 'veterinary care')?.category_total || 0
-    );
-    const otherExpenses = expenseCategories
-      .filter((e) => !['feed', 'veterinary care'].includes(e.category))
-      .reduce((sum, e) => sum + Number(e.category_total), 0);
-
-    const totalExpenses = feedCost + medicineCost + otherExpenses;
-    const totalBatchCost = capitalCost + totalExpenses;
-
-    // 2. Per-batch hog sales summary (live weight sold & income)
-    const [salesRecords] = await db.query(
-      `SELECT id, live_weight_kg, price_per_kilo, total_revenue, sale_date
-       FROM babuyan_hog_sales
-       WHERE department = 'Babuyan' AND batch_id = ?
-       ORDER BY sale_date DESC, id DESC`,
-      [bId]
-    );
-
-    const totalLiveWeightSold = salesRecords.reduce(
-      (sum, s) => sum + Number(s.live_weight_kg),
-      0
-    );
-    const totalIncome = salesRecords.reduce(
-      (sum, s) => sum + Number(s.total_revenue),
-      0
-    );
-
-    // Net profit = income - (capital + feed + medicine + other expenses)
-    const netProfit = totalIncome - totalBatchCost;
-
-    // 3. Health (weight & vaccination) and mortality data per batch
-    const [vaccinations] = await db.query(
-      `SELECT id, vaccine_name, dosage, vaccination_date, administered_by
-       FROM babuyan_vaccination_records
-       WHERE batch_id = ?
-       ORDER BY vaccination_date DESC`,
-      [bId]
-    );
-
-    const [weights] = await db.query(
-      `SELECT id, average_weight_kg, record_date, notes
-       FROM babuyan_weight_records
-       WHERE batch_id = ?
-       ORDER BY record_date DESC`,
-      [bId]
-    );
-
-    const [mortalities] = await db.query(
-      `SELECT id, heads_lost, cause_of_death, mortality_date
-       FROM babuyan_mortality_records
-       WHERE batch_id = ?
-       ORDER BY mortality_date DESC`,
-      [bId]
-    );
-
-    const totalMortalityHeads = mortalities.reduce(
-      (sum, m) => sum + Number(m.heads_lost),
-      0
-    );
-
-    reports.push({
-      batch_id: bId,
-      batch_name: batch.batch_name || '-',
-      purchase_date: batch.purchase_date,
-      expected_selling_date: batch.expected_selling_date,
-      active_heads: Number(batch.number_of_heads),
-      financial_summary: {
-        capital: capitalCost,
-        feed: feedCost,
-        medicine: medicineCost,
-        other_expenses: otherExpenses,
-        total_expenses: totalExpenses,
-        total_cost: totalBatchCost,
-        live_weight_sold_kg: totalLiveWeightSold,
-        income: totalIncome,
-        net_profit: netProfit,
-      },
-      sales_summary: {
-        records: salesRecords,
-        total_live_weight_kg: totalLiveWeightSold,
-        total_income: totalIncome,
-      },
-      expense_summary: {
-        by_category: expenseCategories,
-        total_expenses: totalExpenses,
-      },
-      health_and_mortality: {
-        vaccinations,
-        weights,
-        mortalities,
-        total_mortality_heads: totalMortalityHeads,
-      },
+// Analytics ng Babuyan: comparison ng batches
+async function babuyanAnalytics() {
+  const [batches] = await model.listBatchIds();
+  const rows = [];
+  for (const b of batches) {
+    const p = await batchProfit(b.id);
+    if (!p) continue;
+    // feed = items na "sack" ang unit
+    const [[f]] = await model.getBatchFeedUsage([b.id]);
+    rows.push({
+      label: `Batch #${b.id}`,
+      costPerKilo: p.costPerKilo,
+      netProfit: p.netProfit,
+      totalCost: p.totalCost,
+      feedSacks: num(f.feed),
+      feedToWeight: p.kilosSold > 0 ? num(f.feed) / p.kilosSold : 0, // sacks kada kilo ng live weight
     });
   }
+  return { batches: rows };
+}
 
-  return reports;
-};
+// 1.1.5 Sales summary: Gulayan/Prutasan kada product sa isang buwan, Babuyan kada batch
+async function salesSummary(dept, month) {
+  if (dept === 'babuyan') {
+    const [rows] = await model.getBatchSalesTotals();
+    return { rows: rows.map((r) => ({ batch_id: r.batch_id, kilos: num(r.kilos), income: num(r.income) })) };
+  }
+  const [rows] = await model.getMonthlyProductSales([dept, `${month}%`]);
+  return { rows: rows.map((r) => ({ product: r.product, transactions: r.transactions, kilos: num(r.kilos), total: num(r.total), cogs: num(r.cogs) })) };
+}
+
+// 2.2.4 Expense summary: per category sa isang buwan, at per batch para sa Babuyan
+async function expenseSummary(dept, month) {
+  const [byCategory] = await model.getMonthlyExpenseBreakdown([dept, `${month}%`]);
+  let byBatch = [];
+  if (dept === 'babuyan') {
+    [byBatch] = await model.getBatchExpenseTotals();
+  }
+  return {
+    byCategory: byCategory.map((r) => ({ category: r.category, total: num(r.total) })),
+    byBatch: byBatch.map((r) => ({ batch_id: r.batch_id, category: r.category, total: num(r.total) })),
+  };
+}
+
+module.exports = { monthlyFull, batchReport, deptAnalytics, babuyanAnalytics, salesSummary, expenseSummary };

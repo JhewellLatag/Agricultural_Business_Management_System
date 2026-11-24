@@ -1,0 +1,185 @@
+/* mobile.css - ayos ng layout para sa PHONE at TABLET (POS, Babuyan staff, Admin)
+   Naka-import ito PINAKAHULI sa main.jsx kaya ito ang nananaig sa ibang CSS.
+   Breakpoints: 1024px pababa = tablet, 700px pababa = phone. */
+
+/* ============ TOUCH DEVICES (phone at tablet) ============ */
+@media (hover: none) {
+  /* walang "hover" sa touch, kaya huwag nang gumalaw ang cards kapag natapik */
+  .card:hover, .chart-card:hover, .batch-card:hover, .product-card:hover,
+  .data-table tbody tr:hover, .dept-tab:hover, .tab:hover, .chip:hover { transform: none; }
+  .data-table tbody tr:hover { background: transparent; }
+}
+@media (pointer: coarse) {
+  /* sapat na laki ng tap target at 16px na text para hindi mag-zoom ang iPhone */
+  button, .btn-primary, .btn-danger, .btn-ghost { min-height: 44px; }
+  input, select, textarea { font-size: 16px; min-height: 44px; }
+  .nav-link { padding: 14px; }
+  .qty button { min-height: 0; width: 38px; height: 38px; }
+  .card-qty button { min-height: 0; }
+  .view-toggle button { min-height: 40px; }
+  .cart-line .qty { padding: 3px; }
+}
+
+/* ============ TABLET (701px - 1024px) ============ */
+@media (min-width: 701px) and (max-width: 1024px) {
+  /* Staff (lahat): mas maliit na banner para mas maraming espasyo sa trabaho */
+  .staff-top { padding: 10px 20px; }
+  .staff-banner, .staff-babuyan .staff-banner { padding: 18px 24px; }
+  .staff-banner h2 { font-size: 1.7rem; }
+
+}
+
+/* Babuyan TABLET LANDSCAPE (901-1024px): gilid na menu. minmax(0,1fr) ang dahilan kaya hindi na putol ang content sa kanan */
+.staff-babuyan { grid-template-columns: 250px minmax(0, 1fr); }
+@media (min-width: 901px) and (max-width: 1024px) {
+  .staff-babuyan { grid-template-columns: 200px minmax(0, 1fr); }
+  .staff-babuyan .staff-top { align-self: start; height: 100vh; height: 100dvh; padding: 22px 14px; }
+  .staff-babuyan .staff-link { padding: 14px 16px; }
+  .staff-babuyan .staff-main { padding: 22px 20px 40px; }
+}
+/* Babuyan TABLET PORTRAIT (701-900px): menu sa taas para buong lapad ang gamit ng mga table */
+@media (min-width: 701px) and (max-width: 900px) {
+  .staff-babuyan { display: block; }
+  .staff-babuyan .staff-top { flex-direction: row; align-items: center; height: auto; padding: 10px 20px; gap: 16px; }
+  .staff-babuyan .staff-nav { flex-direction: row; flex: 1; margin: 0; }
+  .staff-babuyan .staff-link { border-radius: 999px; padding: 12px 20px; }
+  .staff-babuyan .staff-main { width: 100%; padding: 22px 20px 40px; }
+}
+/* Babuyan Add stock: dalawang column ang fields sa tablet para hindi sobrang haba */
+@media (min-width: 701px) and (max-width: 1100px) {
+  .staff-babuyan .form-grid > form.card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; align-content: start; }
+  .staff-babuyan .form-grid > form.card > h3,
+  .staff-babuyan .form-grid > form.card > label,
+  .staff-babuyan .form-grid > form.card > button { grid-column: 1 / -1; }
+  .staff-babuyan .form-grid > form.card > button { justify-self: start; min-width: 160px; }
+}
+.staff-main { min-width: 0; }
+.staff-link .lbl-short { display: none; }
+
+/* label sa ibabaw ng input (hal. Low-stock level, Transaction date) */
+.card label.field-label { display: block; margin-bottom: 12px; font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+.card label.field-label input { margin: 4px 0 0; color: var(--text); font-weight: 400; font-size: 1rem; }
+
+/* ============ TABLET + PHONE: Admin ============ */
+@media (max-width: 1024px) {
+  /* hindi na lumalabas ang anino ng nakatagong drawer sa kaliwang gilid */
+  .sidebar { box-shadow: none; }
+  .sidebar.open { box-shadow: 0 0 40px rgba(0, 0, 0, 0.4); }
+  .page-actions a.btn-ghost { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+  .ov-grid { grid-template-columns: minmax(0, 1fr) !important; } /* !important dahil may inline style sa AnalyticsOverview */
+  .row.between { flex-wrap: wrap; gap: 8px; }
+}
+
+/* ============ PHONE (700px pababa) ============ */
+@media (max-width: 700px) {
+
+  /* ---------- POS: Gulayan at Prutasan ---------- */
+  .pos-head h1 { font-size: 1.5rem; }
+  .pos-head p { margin: 2px 0 12px; font-size: 0.9rem; }
+  .pos-layout { display: block; padding-bottom: 84px; } /* may espasyo para hindi matakpan ng cart bar ang huling product */
+  .pos-products { padding: 12px; }
+  .pos-tools { gap: 8px; }
+  .pos-search { padding: 12px 16px; }
+  .chip-row { flex-wrap: nowrap; overflow-x: auto; margin: 0 -12px 12px; padding: 0 12px 4px; scrollbar-width: none; }
+  .chip-row::-webkit-scrollbar { display: none; }
+  .pos-chip { flex: 0 0 auto; padding: 10px 18px; min-height: 44px; }
+
+  .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .product-card { padding: 10px; gap: 4px; border-radius: 14px; }
+  .product-info strong { font-size: 0.95rem; }
+  .product-price { font-size: 0.95rem; }
+  .pos-add { min-height: 44px; }
+  .product-list .product-card { padding: 10px; gap: 10px; }
+  .product-list .pos-add { width: 96px; }
+  .product-list .card-qty { width: 140px; }
+
+  /* Floating cart bar: nasa itaas ng bottom menu, abot ng hinlalaki */
+  .cart-bar {
+    display: flex; align-items: center; gap: 12px; position: fixed; left: 12px; right: 12px;
+    bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 45; min-height: 56px; padding: 10px 18px;
+    border-radius: 16px; background: var(--accent); color: #fff; font-size: 1rem;
+    box-shadow: 0 14px 28px -8px rgba(0, 0, 0, 0.5); animation: cartBarIn 0.25s ease;
+  }
+  .cart-bar-count { width: 30px; height: 30px; border-radius: 50%; background: #fff; color: var(--accent-dark); display: grid; place-items: center; font-weight: 800; }
+  .cart-bar-label { flex: 1; text-align: left; font-weight: 700; }
+  .cart-bar strong { font-size: 1.15rem; }
+  @keyframes cartBarIn { from { opacity: 0; transform: translateY(16px); } }
+
+  /* Cart = bottom sheet. (mas mataas ang specificity para hindi masira ng .card:hover) */
+  .cart-scrim { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 55; animation: cartFade 0.2s; }
+  @keyframes cartFade { from { opacity: 0; } }
+  .pos-layout .pos-cart.card,
+  .pos-layout .pos-cart.card:hover {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 60;
+    max-height: 88vh; max-height: 88dvh; border-radius: 22px 22px 0 0;
+    padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+    transform: translateY(105%); visibility: hidden;
+    transition: transform 0.3s ease, visibility 0s linear 0.3s;
+    box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.35);
+  }
+  .pos-layout .pos-cart.card.open,
+  .pos-layout .pos-cart.card.open:hover { transform: none; visibility: visible; transition: transform 0.3s ease, visibility 0s; }
+  .cart-grab { display: block; width: 44px; height: 5px; border-radius: 99px; background: var(--line); margin: 0 auto 10px; }
+  .cart-close { display: inline-flex; align-items: center; }
+  .cart-lines { min-height: 60px; }
+  .cart-total { margin: 12px 0; padding: 12px 16px; }
+  .complete-btn { min-height: 54px; }
+
+  /* ---------- Staff (lahat): menu sa ilalim ---------- */
+  .staff-link .lbl-long { display: none; }
+  .staff-link .lbl-short { display: inline; }
+  .staff-link { display: flex; align-items: center; justify-content: center; min-height: 48px; line-height: 1.15; }
+  .staff-logout { min-height: 44px; padding: 8px 16px; }
+  .staff-banner h2 { font-size: 1.4rem; }
+  .staff-banner p { font-size: 0.9rem; }
+  .staff-banner, .staff-babuyan .staff-banner { padding: 14px 16px; }
+
+  /* Babuyan: grid ng form ay isang column, malaki ang button */
+  .staff-babuyan .form-grid { grid-template-columns: 1fr; }
+  .sale-form .row > button, .sale-form .row > .btn-primary { min-height: 50px; }
+
+  /* ---------- Admin: tabs ---------- */
+  .dept-tabs, .tabs { flex-wrap: nowrap; overflow-x: auto; gap: 6px; margin-bottom: 14px; padding: 2px 2px 8px; scrollbar-width: none; }
+  .dept-tabs::-webkit-scrollbar, .tabs::-webkit-scrollbar { display: none; }
+  .dept-tab, .tab { flex: 1 0 auto; padding: 10px 18px; text-align: center; min-height: 44px; }
+  .page-actions a.btn-ghost { width: 100%; min-height: 46px; }
+  .view-note { margin: -4px 0 12px; }
+
+  /* ---------- Mga table = compact na cards ---------- */
+  .data-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; padding: 10px 14px 12px; margin-bottom: 10px; }
+  .data-table td { display: block; width: auto; padding: 6px 0; border: 0; text-align: left; min-width: 0; overflow-wrap: anywhere; }
+  .data-table td::before { display: block; flex: none; margin-bottom: 1px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  /* unang column = pamagat ng card */
+  .data-table td:first-child { grid-column: 1 / -1; font-weight: 700; font-size: 1.02rem; padding: 2px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .data-table td:first-child::before { display: none; }
+  /* mga mahabang laman = buong lapad */
+  .data-table td[data-label='Status'], .data-table td[data-label='Note'], .data-table td[data-label='Product'] { grid-column: 1 / -1; }
+  /* Edit / Delete */
+  .data-table td[data-label=''] { grid-column: 1 / -1; padding-top: 8px; }
+  .data-table td[data-label=''] .row-actions { width: 100%; }
+  .data-table td[data-label=''] .row-actions > * { flex: 1; }
+  .data-table td[data-label=''] .btn-danger.small, .data-table td[data-label=''] .btn-ghost { min-height: 46px; }
+  .data-table .badge { margin-bottom: 2px; }
+  .data-table td input, .data-table td select { margin: 0; }
+
+  /* Mga card sa loob ng admin */
+  .card h3 { font-size: 1.1rem; }
+  .ov-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ov-card { padding: 14px; }
+  .ov-card strong { font-size: 1.15rem; }
+  .premium-analytics-intro { padding: 18px; margin: 14px 0; border-radius: 18px; }
+  .premium-analytics-intro h2 { font-size: 22px; }
+  .analytics-grid .chart-card { padding: 16px; border-radius: 16px; }
+  .batch-card { padding: 18px; }
+  .legend-row { font-size: 0.8rem; gap: 8px 12px; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; }
+}
+
+@media (max-width: 380px) {
+  .product-grid { gap: 8px; }
+  .product-card { padding: 8px; }
+  .card-qty span { font-size: 0.78rem; }
+  .card-qty button { width: 34px; height: 34px; }
+}

@@ -1,134 +1,114 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import api from './services/api';
-import Login from './components/Login';
-import AdminInterface from './components/AdminInterface';
-import GulayanStaffInterface from './components/GulayanStaffInterface';
-import PrutasanStaffInterface from './components/PrutasanStaffInterface';
-import BabuyanStaffInterface from './components/BabuyanStaffInterface';
+// WBS 4.3.2–4.3.5 — Role-Based Page Routing
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// App.jsx - lahat ng pages at kung sino ang pwede pumasok (RBAC sa frontend)
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { useAuth } from './context/AuthContext.jsx';
+import Login from './components/Login.jsx';
+import Layout from './components/Layout.jsx';
+import Inventory from './components/Inventory.jsx';
+import Sales from './components/Sales.jsx';
+import Expenses from './components/Expenses.jsx';
+import Livestock from './components/Livestock.jsx';
+import Audit from './components/Audit.jsx';
+import Usage from './components/Usage.jsx';
+import Reports from './components/Reports.jsx';
+import Analytics from './components/Analytics.jsx';
+import Users from './components/Users.jsx';
+import ActivityLog from './components/ActivityLog.jsx';
+import Pos from './components/Pos.jsx';
+import AdminInventory from './components/AdminInventory.jsx';
+import AdminExpenses from './components/AdminExpenses.jsx';
+import BabuyanAdmin from './components/BabuyanAdmin.jsx';
+import AnalyticsReports from './components/AnalyticsReports.jsx';
 
-const getDefaultRoute = (role) => {
-  switch (role) {
-    case 'Admin':
-      return '/admin/gulayan/inventory';
-    case 'Gulayan Staff':
-      return '/gulayan-staff';
-    case 'Prutasan Staff':
-      return '/prutasan-staff';
-    case 'Babuyan Staff':
-      return '/babuyan-staff';
-    default:
-      return '/login';
+import GulayanInventory from './components/GulayanInventory.jsx';
+import PrutasanInventory from './components/PrutasanInventory.jsx';
+import BabuyanInventory from './components/BabuyanInventory.jsx';
+function DepartmentInventory(props) { const params = useParams(); const dept = props.dept || params.dept; const Component = {gulayan: GulayanInventory, prutasan: PrutasanInventory, babuyan: BabuyanInventory}[dept]; return Component ? <Component {...props} /> : <Navigate to="/" replace />; }
+import GulayanSales from './components/GulayanSales.jsx';
+import PrutasanSales from './components/PrutasanSales.jsx';
+import BabuyanSales from './components/BabuyanSales.jsx';
+function DepartmentSales(props) { const params = useParams(); const dept = props.dept || params.dept; const Component = {gulayan: GulayanSales, prutasan: PrutasanSales, babuyan: BabuyanSales}[dept]; return Component ? <Component {...props} /> : <Navigate to="/" replace />; }
+import GulayanExpenses from './components/GulayanExpenses.jsx';
+import PrutasanExpenses from './components/PrutasanExpenses.jsx';
+import BabuyanExpenses from './components/BabuyanExpenses.jsx';
+function DepartmentExpenses(props) { const params = useParams(); const dept = props.dept || params.dept; const Component = {gulayan: GulayanExpenses, prutasan: PrutasanExpenses, babuyan: BabuyanExpenses}[dept]; return Component ? <Component {...props} /> : <Navigate to="/" replace />; }
+import GulayanAnalytics from './components/GulayanAnalytics.jsx';
+import PrutasanAnalytics from './components/PrutasanAnalytics.jsx';
+import BabuyanAnalytics from './components/BabuyanAnalytics.jsx';
+function DepartmentAnalytics(props) { const params = useParams(); const dept = props.dept || params.dept; const Component = {gulayan: GulayanAnalytics, prutasan: PrutasanAnalytics, babuyan: BabuyanAnalytics}[dept]; return Component ? <Component {...props} /> : <Navigate to="/" replace />; }
+
+// Saan mapupunta ang user pagka-login. Walang dashboard, kaya diretso sa module.
+const homeFor = (role) => (role === 'admin' ? '/inventory' : role === 'babuyan' ? '/babuyan/inventory' : `/${role}/sales`);
+
+// Ano lang ang pwedeng buksan ng bawat staff
+const STAFF_PAGES = {
+  gulayan: ['sales', 'inventory'],
+  prutasan: ['sales', 'inventory'],
+  babuyan: ['inventory', 'usage'],
+};
+
+// Guard para sa mga page ng department. Admin = lahat. Staff = sarili nilang pages lang.
+function Guard({ page, dept: fixedDept, children }) {
+  const { user } = useAuth();
+  const params = useParams();
+  const dept = fixedDept || params.dept;
+  const allowed = user.role === 'admin' || (user.role === dept && STAFF_PAGES[dept]?.includes(page));
+  return allowed ? children : <Navigate to={homeFor(user.role)} replace />;
+}
+
+// Para sa Babuyan staff lang (Record release). Wala na ito sa Admin.
+function BabuyanStaffOnly({ children }) {
+  const { user } = useAuth();
+  return user.role === 'babuyan' ? children : <Navigate to={homeFor(user.role)} replace />;
+}
+
+// Gulayan/Prutasan staff = POS. Admin = lumang sales form (Babuyan hog sales ay nasa Babuyan page).
+function SalesPage() {
+  const { user } = useAuth();
+  return user.role === 'admin' ? <DepartmentSales /> : <Pos />;
+}
+
+// Guard para sa Admin-only na pages
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  return user.role === 'admin' ? children : <Navigate to={homeFor(user.role)} replace />;
+}
+
+export default function App() {
+  const { user } = useAuth();
+
+  // Hindi pa naka-login -> login page lang
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
-};
-
-// 4.3 Admin Route Guard (Routes directly to Full Menu, No Dashboard)
-const AdminRoute = ({ user, onLogout }) => {
-  if (!user || user.status !== 'active') return <Navigate to="/login" replace />;
-  if (user.role !== 'Admin') return <Navigate to={getDefaultRoute(user.role)} replace />;
-  return <AdminInterface user={user} onLogout={onLogout} />;
-};
-
-// 1.11 Gulayan Staff Route Guard
-const GulayanStaffRoute = ({ user, onLogout }) => {
-  if (!user || user.status !== 'active') return <Navigate to="/login" replace />;
-  if (user.role !== 'Gulayan Staff') return <Navigate to={getDefaultRoute(user.role)} replace />;
-  return <GulayanStaffInterface user={user} onLogout={onLogout} />;
-};
-
-// 2.11 Prutasan Staff Route Guard
-const PrutasanStaffRoute = ({ user, onLogout }) => {
-  if (!user || user.status !== 'active') return <Navigate to="/login" replace />;
-  if (user.role !== 'Prutasan Staff') return <Navigate to={getDefaultRoute(user.role)} replace />;
-  return <PrutasanStaffInterface user={user} onLogout={onLogout} />;
-};
-
-// 3.9 Babuyan Staff Route Guard
-const BabuyanStaffRoute = ({ user, onLogout }) => {
-  if (!user || user.status !== 'active') return <Navigate to="/login" replace />;
-  if (user.role !== 'Babuyan Staff') return <Navigate to={getDefaultRoute(user.role)} replace />;
-  return <BabuyanStaffInterface user={user} onLogout={onLogout} />;
-};
-
-const App = () => {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      localStorage.removeItem('user');
-      return null;
-    }
-  });
-
-  useEffect(() => {
-    const verifySession = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      try {
-        const res = await api.get('/auth/session');
-        if (res.data?.user) {
-          setCurrentUser(res.data.user);
-          localStorage.setItem('user', JSON.stringify(res.data.user));
-        }
-      } catch (err) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setCurrentUser(null);
-      }
-    };
-
-    verifySession();
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setCurrentUser(null);
-  };
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          path="/login"
-          element={
-            currentUser ? (
-              <Navigate to={getDefaultRoute(currentUser.role)} replace />
-            ) : (
-              <Login onLoginSuccess={(user) => setCurrentUser(user)} />
-            )
-          }
-        />
-        <Route
-          path="/admin/*"
-          element={<AdminRoute user={currentUser} onLogout={handleLogout} />}
-        />
-        <Route
-          path="/gulayan-staff/*"
-          element={<GulayanStaffRoute user={currentUser} onLogout={handleLogout} />}
-        />
-        <Route
-          path="/prutasan-staff/*"
-          element={<PrutasanStaffRoute user={currentUser} onLogout={handleLogout} />}
-        />
-        <Route
-          path="/babuyan-staff/*"
-          element={<BabuyanStaffRoute user={currentUser} onLogout={handleLogout} />}
-        />
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to={currentUser ? getDefaultRoute(currentUser.role) : '/login'}
-              replace
-            />
-          }
-        />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route element={<Layout />}>
+        {/* Pinagsamang Admin pages */}
+        <Route path="/inventory" element={<AdminOnly><AdminInventory /></AdminOnly>} />
+        <Route path="/expenses" element={<AdminOnly><AdminExpenses /></AdminOnly>} />
+        <Route path="/babuyan" element={<AdminOnly><BabuyanAdmin /></AdminOnly>} />
+        <Route path="/analytics" element={<AdminOnly><AnalyticsReports /></AdminOnly>} />
+        <Route path="/:dept/inventory" element={<Guard page="inventory"><DepartmentInventory /></Guard>} />
+        <Route path="/:dept/sales" element={<Guard page="sales"><SalesPage /></Guard>} />
+        <Route path="/:dept/expenses" element={<AdminOnly><DepartmentExpenses /></AdminOnly>} />
+        <Route path="/:dept/audit" element={<AdminOnly><Audit /></AdminOnly>} />
+        <Route path="/:dept/analytics" element={<AdminOnly><DepartmentAnalytics /></AdminOnly>} />
+        <Route path="/babuyan/usage" element={<BabuyanStaffOnly><Usage /></BabuyanStaffOnly>} />
+        <Route path="/babuyan/livestock" element={<AdminOnly><Livestock /></AdminOnly>} />
+        <Route path="/reports" element={<Navigate to="/analytics" replace />} />
+        <Route path="/users" element={<AdminOnly><Users /></AdminOnly>} />
+        <Route path="/activity" element={<AdminOnly><ActivityLog /></AdminOnly>} />
+      </Route>
+      <Route path="*" element={<Navigate to={homeFor(user.role)} replace />} />
+    </Routes>
   );
-};
-
-export default App;
+}

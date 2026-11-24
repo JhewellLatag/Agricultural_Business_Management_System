@@ -1,225 +1,79 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 4.3.1 — Account Management UI
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Users.jsx - accounts, roles, edit, at password reset (4.3.1, Admin only)
+import { useEffect, useState } from 'react';
+import { api } from '../services/api.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import PageHeader from './PageHeader.jsx';
+import DataTable from './DataTable.jsx';
+import '../styles/forms.css';
 
-const AdminUserManagement = () => {
+const ROLES = ['admin', 'gulayan', 'prutasan', 'babuyan'];
+
+export default function AdminUserManagement() {
+  const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
-  const [editId, setEditId] = useState(null);
+  const [msg, setMsg] = useState('');
+  const blank = { name: '', username: '', password: '', role: 'gulayan' };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null); // { id, name, role, active, password }
 
-  const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Gulayan Staff');
-  const [department, setDepartment] = useState('Gulayan');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const load = () => api.get('/users').then(setUsers);
+  useEffect(() => { load(); }, []);
 
-  const handleRoleChange = (selectedRole) => {
-    setRole(selectedRole);
-    if (selectedRole === 'Admin') setDepartment('All');
-    if (selectedRole === 'Gulayan Staff') setDepartment('Gulayan');
-    if (selectedRole === 'Prutasan Staff') setDepartment('Prutasan');
-    if (selectedRole === 'Babuyan Staff') setDepartment('Babuyan');
-  };
-
-  const loadUsers = async () => {
-    try {
-      const res = await api.get('/admin/users');
-      setUsers(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load user accounts.');
-    }
-  };
-
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  const resetForm = () => {
-    setEditId(null);
-    setFullName('');
-    setUsername('');
-    setPassword('');
-    setRole('Gulayan Staff');
-    setDepartment('Gulayan');
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage('');
-    setError('');
-
-    try {
-      if (editId) {
-        await api.put(/admin/users/${editId}, {
-          full_name: fullName,
-          username,
-          department,
-          role,
-          password: password || undefined,
-        });
-        setMessage('User account updated.');
-      } else {
-        await api.post('/admin/users', {
-          full_name: fullName,
-          username,
-          password,
-          department,
-          role,
-        });
-        setMessage('User account created.');
-      }
-      resetForm();
-      loadUsers();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Operation failed.');
-    }
-  };
-
-  const handleEdit = (u) => {
-    setError('');
-    setMessage('');
-    setEditId(u.id);
-    setFullName(u.full_name || '');
-    setUsername(u.username || '');
-    setPassword('');
-    setRole(u.role || 'Gulayan Staff');
-    setDepartment(u.department || 'Gulayan');
-  };
-
-  const handleToggleStatus = async (u) => {
-    setError('');
-    setMessage('');
-    const newStatus = u.status === 'active' ? 'deactivated' : 'active';
-    try {
-      await api.patch(/admin/users/${u.id}/status, { status: newStatus });
-      setMessage(User account ${newStatus}.);
-      loadUsers();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update account status.');
-    }
+  const run = async (fn, after) => {
+    try { const r = await fn(); setMsg(r.message); after?.(); load(); } catch (e) { setMsg(e.message); }
   };
 
   return (
-    <div>
-      <h2>Admin - User Account &amp; Role-Based Access Management</h2>
+    <>
+      <PageHeader title="User access" subtitle="Create accounts and assign a department and role." />
+      {msg && <div className="toast" onAnimationEnd={() => setMsg('')}>{msg}</div>}
 
-      {message && (
-        <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '10px', marginBottom: '12px' }}>
-          {message}
-        </div>
-      )}
-
-      {error && (
-        <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '10px', marginBottom: '12px' }}>
-          {error}
-        </div>
-      )}
-
-      <h3>{editId ? 'Edit User Account' : 'Create New User Account'}</h3>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Full Name:</label>
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Username:</label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label>{editId ? 'New Password (leave blank to keep current):' : 'Password:'}</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required={!editId}
-          />
-        </div>
-
-        <div>
-          <label>Role:</label>
-          <select value={role} onChange={(e) => handleRoleChange(e.target.value)}>
-            <option value="Admin">Administrator</option>
-            <option value="Gulayan Staff">Gulayan Staff</option>
-            <option value="Prutasan Staff">Prutasan Staff</option>
-            <option value="Babuyan Staff">Babuyan Staff</option>
+      <form className="card sale-form" onSubmit={(e) => { e.preventDefault(); run(() => api.post('/users', form), () => setForm(blank)); }}>
+        <h3>Create account</h3>
+        <div className="row">
+          <input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+          <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            {ROLES.map((r) => <option key={r}>{r}</option>)}
           </select>
+          <button className="btn-primary">Create</button>
         </div>
-
-        <div>
-          <label>Assigned Department:</label>
-          <select value={department} onChange={(e) => setDepartment(e.target.value)}>
-            <option value="All">All Departments (Admin)</option>
-            <option value="Gulayan">Gulayan</option>
-            <option value="Prutasan">Prutasan</option>
-            <option value="Babuyan">Babuyan</option>
-          </select>
-        </div>
-
-        <button type="submit">{editId ? 'Save Changes' : 'Create Account'}</button>
-        {editId && (
-          <button type="button" onClick={resetForm} style={{ marginLeft: '8px' }}>
-            Cancel
-          </button>
-        )}
       </form>
 
-      <h3>Registered User Accounts</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Full Name</th>
-            <th>Username</th>
-            <th>Department</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => {
-            const statusText = u.status || 'active';
-            return (
-              <tr key={u.id}>
-                <td>{u.full_name}</td>
-                <td>{u.username}</td>
-                <td>{u.department}</td>
-                <td>{u.role}</td>
-                <td>
-                  <strong style={{ color: statusText === 'active' ? 'green' : 'red' }}>
-                    {statusText.toUpperCase()}
-                  </strong>
-                </td>
-                <td>
-                  <button type="button" onClick={() => handleEdit(u)}>
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleStatus(u)}
-                    style={{ marginLeft: '8px' }}
-                  >
-                    {statusText === 'active' ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+      <div className="card">
+        <DataTable
+          rows={users}
+          columns={[
+            { key: 'name', label: 'Name', render: (u) => editing?.id === u.id
+              ? <input style={{ margin: 0 }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /> : u.name },
+            { key: 'username', label: 'Username' },
+            { key: 'role', label: 'Role', render: (u) => editing?.id === u.id ? (
+              <select style={{ margin: 0, width: 130 }} value={editing.role} onChange={(e) => setEditing({ ...editing, role: e.target.value })}>
+                {ROLES.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            ) : u.role },
+            { key: 'password', label: 'New password', render: (u) => editing?.id === u.id && (
+              <input style={{ margin: 0 }} type="password" placeholder="Leave blank to keep" value={editing.password} onChange={(e) => setEditing({ ...editing, password: e.target.value })} />
+            ) },
+            { key: 'active', label: 'Status', render: (u) => (
+              <button className={u.active ? 'btn-ghost' : 'btn-danger small'} disabled={u.id === me.id}
+                onClick={() => run(() => api.put(`/users/${u.id}`, { ...u, active: !u.active }))}>
+                {u.active ? 'Active' : 'Deactivated'}
+              </button>
+            ) },
+            { key: 'actions', label: '', render: (u) => editing?.id === u.id ? (
+              <div className="row-actions">
+                <button className="btn-ghost" onClick={() => run(() => api.put(`/users/${u.id}`, { ...editing, active: u.active }), () => setEditing(null))}>Save</button>
+                <button className="btn-link" onClick={() => setEditing(null)}>Cancel</button>
+              </div>
+            ) : <button className="btn-ghost" onClick={() => setEditing({ id: u.id, name: u.name, role: u.role, password: '' })}>Edit</button> },
+          ]}
+        />
+      </div>
+    </>
   );
-};
-
-export default AdminUserManagement;
+}

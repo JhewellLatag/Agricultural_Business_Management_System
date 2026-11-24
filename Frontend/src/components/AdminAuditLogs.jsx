@@ -1,111 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 4.4.1 — Activity Log UI
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// ActivityLog.jsx - lahat ng galaw sa system (4.4.1, Admin only)
+import { useEffect, useState } from 'react';
+import { api } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import DataTable from './DataTable.jsx';
+import '../styles/forms.css';
 
-const AdminAuditLogs = () => {
-  const [logs, setLogs] = useState([]);
-  const [filterUser, setFilterUser] = useState('');
-  const [filterDepartment, setFilterDepartment] = useState('ALL');
-  const [filterDate, setFilterDate] = useState('');
+export default function AdminAuditLogs() {
+  const [rows, setRows] = useState([]);
+  const [filters, setFilters] = useState({ user: '', dept: '', date: '' });
 
-  const loadLogs = async () => {
-    const params = {};
-    if (filterUser.trim()) params.user = filterUser.trim();
-    if (filterDepartment !== 'ALL') params.department = filterDepartment;
-    if (filterDate) params.date = filterDate;
-
-    const res = await api.get('/admin/audit-logs', { params });
-    setLogs(res.data);
-  };
-
+  // tuwing magbabago ang filter, kukunin ulit ang listahan
   useEffect(() => {
-    loadLogs();
-  }, [filterUser, filterDepartment, filterDate]);
-
-  const handleClearFilters = () => {
-    setFilterUser('');
-    setFilterDepartment('ALL');
-    setFilterDate('');
-  };
+    const q = new URLSearchParams(filters).toString();
+    api.get('/activity?' + q).then(setRows);
+  }, [filters]);
 
   return (
-    <div>
-      <h2>Admin - System Activity &amp; Audit Logs</h2>
-
-      {/* Filter Controls: User, Department, and Date */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-        <div>
-          <label>Filter by User: </label>
-          <input
-            type="text"
-            placeholder="Username or User ID"
-            value={filterUser}
-            onChange={(e) => setFilterUser(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <label>Filter by Department: </label>
-          <select
-            value={filterDepartment}
-            onChange={(e) => setFilterDepartment(e.target.value)}
-          >
-            <option value="ALL">All Departments</option>
-            <option value="Gulayan">Gulayan</option>
-            <option value="Prutasan">Prutasan</option>
-            <option value="Babuyan">Babuyan</option>
-            <option value="All">System / Admin</option>
+    <>
+      <PageHeader title="Activity log" subtitle="Who did what, and when." />
+      <div className="card">
+        <div className="filter-row">
+          <input placeholder="Filter by user" value={filters.user} onChange={(e) => setFilters({ ...filters, user: e.target.value })} />
+          <select value={filters.dept} onChange={(e) => setFilters({ ...filters, dept: e.target.value })}>
+            <option value="">All departments</option>
+            <option>gulayan</option><option>prutasan</option><option>babuyan</option>
           </select>
+          <input type="date" value={filters.date} onChange={(e) => setFilters({ ...filters, date: e.target.value })} />
         </div>
-
-        <div>
-          <label>Filter by Date: </label>
-          <input
-            type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-          />
-        </div>
-
-        <button type="button" onClick={handleClearFilters}>
-          Clear Filters
-        </button>
+        <DataTable
+          empty="No activity found."
+          rows={rows}
+          columns={[
+            { key: 'created_at', label: 'Time', render: (r) => new Date(r.created_at).toLocaleString() },
+            { key: 'username', label: 'User' },
+            { key: 'department', label: 'Department' },
+            { key: 'action', label: 'Action' },
+          ]}
+        />
       </div>
-
-      {/* Activity & Audit Log Table */}
-      <table>
-        <thead>
-          <tr>
-            <th>Timestamp</th>
-            <th>User</th>
-            <th>Role</th>
-            <th>Department</th>
-            <th>Module</th>
-            <th>Action</th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logs.length === 0 ? (
-            <tr>
-              <td colSpan="7">No activity logs found for the selected filters.</td>
-            </tr>
-          ) : (
-            logs.map((log) => (
-              <tr key={log.id}>
-                <td>{new Date(log.created_at).toLocaleString()}</td>
-                <td>{log.username}</td>
-                <td>{log.user_role}</td>
-                <td>{log.department}</td>
-                <td>{log.module_name}</td>
-                <td><strong>{log.action_type}</strong></td>
-                <td>{log.details}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+    </>
   );
-};
-
-export default AdminAuditLogs;
+}

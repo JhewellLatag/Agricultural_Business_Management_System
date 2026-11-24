@@ -1,96 +1,92 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
-import { SharedBarChart, SharedLineChart } from './SharedAnalyticsCharts';
+// WBS 4.2.3 — Babuyan Analytics ONLY
+// Assigned Member: Jhewell Latag
+// WBS 4.2.1–4.2.3 — Department Analytics UI
+// Assigned Member(s): Jhewell Latag
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Analytics.jsx - hiwalay na analytics page per department (4.2)
+// Gumagamit ng graphs (bar, line, pie) galing sa Charts.jsx
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { api, peso } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import { SimpleBar, SimpleLine, SimplePie, GroupedBar } from './Charts.jsx';
 
-const BabuyanAnalytics = () => {
-  const [analytics, setAnalytics] = useState(null);
+// kulay ng graph ayon sa department (kapareho ng theme sa global.css)
+const COLORS = { gulayan: '#14935f', prutasan: '#ea7414', babuyan: '#d63a5c' };
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-  useEffect(() => {
-    const loadAnalytics = async () => {
-      const res = await api.get('/analytics/babuyan');
-      setAnalytics(res.data);
-    };
-    loadAnalytics();
-  }, []);
+const Panel = ({ title, children }) => (
+  <div className="card chart-card"><h3>{title}</h3>{children}</div>
+);
 
-  if (!analytics) return <div>Loading Babuyan Analytics...</div>;
+export default function BabuyanAnalytics({ dept: forced, embedded = false }) {
+  const params = useParams();
+  const dept = 'babuyan';
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const color = COLORS[dept];
 
-  const { batchMetrics, profitTrend } = analytics;
+  useEffect(() => { let active = true; setData(null); setError(''); api.get(`/analytics/${dept}`).then(x => { if(active) setData(x); }).catch(e => { if(active) setError(e.message || 'Analytics unavailable'); }); return () => { active = false; }; }, [dept]);
+  if (error) return <div className="card analytics-error"><h3>Could not load {dept} analytics</h3><p>{error}</p><button className="btn-primary" onClick={() => window.location.reload()}>Retry</button></div>;
+  if (!data) return embedded ? <div className="empty-state">Loading...</div> : <PageHeader title={`${dept} analytics`} subtitle="Loading..." />;
 
-  const costComparisonChartData = batchMetrics.map((b) => ({
-    batch: b.batch_id,
-    Capital: b.cost_comparison.capital_cost,
-    Feed: b.cost_comparison.feed_cost,
-    Medicine: b.cost_comparison.medicine_cost,
-    Other: b.cost_comparison.other_expenses,
-  }));
+  // Babuyan: comparison ng batches at profit trend
+  if (dept === 'babuyan') {
+    const b = (data?.batches || []).map((x) => ({
+      label: x.label,
+      value: x.costPerKilo,
+      costPerKilo: x.costPerKilo,
+      feedToWeight: x.feedToWeight,
+      totalCost: x.totalCost,
+      netProfit: x.netProfit,
+    }));
+    return (
+      <>
+        {!embedded && <PageHeader title="Babuyan analytics" subtitle="Compare batches to decide when to sell or expand the herd." />}
+        <div className="analytics-grid">
+          <Panel title="Cost per kilo of live weight">
+            <SimpleBar data={b} color={color} format={peso} />
+          </Panel>
+          <Panel title="Feed-to-weight ratio (sacks per kilo sold)">
+            <SimpleBar data={b.map((x) => ({ label: x.label, value: x.feedToWeight }))} color="#4263eb" format={(v) => Number(v).toFixed(3)} />
+          </Panel>
+          <Panel title="Cost vs profit per batch">
+            <GroupedBar data={b} format={peso} series={[
+              { key: 'totalCost', name: 'Total cost', color: '#d63a5c' },
+              { key: 'netProfit', name: 'Net profit', color: '#14935f' },
+            ]} />
+          </Panel>
+          <Panel title="Profit trend">
+            <SimpleLine data={b.map((x) => ({ label: x.label, value: x.netProfit }))} color="#14935f" format={peso} />
+          </Panel>
+        </div>
+      </>
+    );
+  }
+
+  // Gulayan / Prutasan: ayusin ang peak days Lunes -> Linggo
+  const peak = [...(data.peak || [])].sort((a, c) => DAY_ORDER.indexOf(a.label) - DAY_ORDER.indexOf(c.label));
 
   return (
-    <div>
-      <h2>Babuyan Analytics</h2>
-
-      <h3>Feed-to-Weight Ratio &amp; Cost per Kilo of Live Weight (Per Batch)</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Batch ID</th>
-            <th>Batch Name</th>
-            <th>Total Feed Used</th>
-            <th>Live Weight (kg)</th>
-            <th>Feed-to-Weight Ratio</th>
-            <th>Total Cost</th>
-            <th>Cost / kg Live Weight</th>
-            <th>Revenue</th>
-            <th>Net Profit</th>
-          </tr>
-        </thead>
-        <tbody>
-          {batchMetrics.map((b) => (
-            <tr key={b.batch_id}>
-              <td>{b.batch_id}</td>
-              <td>{b.batch_name}</td>
-              <td>{b.total_feed_units}</td>
-              <td>{b.total_live_weight_kg} kg</td>
-              <td><strong>{b.feed_to_weight_ratio}</strong></td>
-              <td>{b.cost_comparison.total_cost.toFixed(2)}</td>
-              <td><strong>{b.cost_per_kilo_live_weight.toFixed(2)} / kg</strong></td>
-              <td>{b.total_revenue.toFixed(2)}</td>
-              <td>
-                <strong style={{ color: b.net_profit >= 0 ? 'green' : 'red' }}>
-                  {b.net_profit.toFixed(2)}
-                </strong>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* Shared Bar Chart Component */}
-      <SharedBarChart
-        title="Cost Comparison Between Batches"
-        data={costComparisonChartData}
-        xKey="batch"
-        bars={[
-          { dataKey: 'Capital', stackId: 'a', color: '#4f46e5' },
-          { dataKey: 'Feed', stackId: 'a', color: '#16a34a' },
-          { dataKey: 'Medicine', stackId: 'a', color: '#d97706' },
-          { dataKey: 'Other', stackId: 'a', color: '#64748b' },
-        ]}
-      />
-
-      {/* Shared Line Chart Component */}
-      <SharedLineChart
-        title="Profit Trend (Selling & Herd Expansion Insights)"
-        data={profitTrend}
-        xKey="month"
-        lines={[
-          { dataKey: 'revenue', name: 'Revenue', color: '#16a34a' },
-          { dataKey: 'expenses', name: 'Expenses', color: '#dc2626' },
-          { dataKey: 'net_profit', name: 'Net Profit', color: '#2563eb' },
-        ]}
-      />
-    </div>
+    <>
+      {!embedded && <PageHeader title={`${dept} analytics`} subtitle="Based on recorded sales, spoilage, and expenses." />}
+      <div className="analytics-grid">
+        <Panel title="Best-selling products (kg)">
+          <SimpleBar data={data.best || []} color={color} horizontal format={(v) => `${v} kg`} />
+        </Panel>
+        <Panel title="Peak sales days">
+          <SimpleBar data={peak} color={color} format={peso} />
+        </Panel>
+        <Panel title="Underperforming items (kg sold)">
+          <SimpleBar data={data.under || []} color="#9aa5a0" horizontal format={(v) => `${v} kg`} />
+        </Panel>
+        <Panel title="Spoilage trend (kg per month)">
+          <SimpleLine data={data.spoil || []} color="#d63a5c" format={(v) => `${v} kg`} />
+        </Panel>
+        <Panel title="Expense share">
+          <SimplePie data={data.share || []} format={peso} />
+        </Panel>
+      </div>
+    </>
   );
-};
-
-export default BabuyanAnalytics;
+}

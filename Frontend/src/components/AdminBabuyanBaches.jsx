@@ -1,180 +1,106 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 3.1.1, 3.1.3 — Livestock and Batch UI
+// Assigned Member(s): Ivan Lanaria
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Livestock.jsx - pig batches, countdown, edit, at profit per batch (3.1, Admin only)
+import { useEffect, useState } from 'react';
+import { api, peso, fmtDate } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import HealthPanel from './HealthPanel.jsx';
+import '../styles/forms.css';
+import '../styles/livestock.css';
 
-const AdminBabuyanBatches = () => {
+export default function AdminBabuyanBaches() {
   const [batches, setBatches] = useState([]);
-  const [editId, setEditId] = useState(null);
+  const [profit, setProfit] = useState({}); // { batchId: data }
+  const [msg, setMsg] = useState('');
+  const [openId, setOpenId] = useState(null); // batch na nakabukas ang health logs
+  const [editing, setEditing] = useState(null); // batch na ine-edit
+  const empty = { purchase_date: new Date().toISOString().slice(0, 10), heads: '', capital_cost: '' };
+  const [form, setForm] = useState(empty);
 
-  const [batchId, setBatchId] = useState('');
-  const [batchName, setBatchName] = useState('');
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
-  const [numberOfHeads, setNumberOfHeads] = useState('');
-  const [capitalCost, setCapitalCost] = useState('');
+  const load = () => api.get('/batches').then(setBatches).catch((e) => setMsg(e.message));
+  useEffect(() => { load(); }, []);
 
-  const loadBatches = async () => {
-    const res = await api.get('/babuyan/batches');
-    setBatches(res.data);
+  const run = async (fn, after) => {
+    try { const r = await fn(); setMsg(r.message); after?.(); load(); setProfit({}); } catch (err) { setMsg(err.message); }
   };
 
-  useEffect(() => {
-    loadBatches();
-  }, []);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const payload = {
-      batch_id: batchId,
-      batch_name: batchName,
-      purchase_date: purchaseDate,
-      number_of_heads: numberOfHeads,
-      capital_cost: capitalCost,
-    };
-
-    if (editId) {
-      await api.put(/babuyan/batches/${editId}, payload);
-    } else {
-      await api.post('/babuyan/batches', payload);
-    }
-
-    setEditId(null);
-    setBatchId('');
-    setBatchName('');
-    setPurchaseDate(new Date().toISOString().split('T')[0]);
-    setNumberOfHeads('');
-    setCapitalCost('');
-    loadBatches();
-  };
-
-  const handleEdit = (batch) => {
-    setEditId(batch.id);
-    setBatchId(batch.batch_id);
-    setBatchName(batch.batch_name || '');
-    setPurchaseDate(batch.purchase_date);
-    setNumberOfHeads(batch.number_of_heads);
-    setCapitalCost(batch.capital_cost);
-  };
-
-  const handleCancelEdit = () => {
-    setEditId(null);
-    setBatchId('');
-    setBatchName('');
-    setPurchaseDate(new Date().toISOString().split('T')[0]);
-    setNumberOfHeads('');
-    setCapitalCost('');
+  // kunin ang cost breakdown, income at net profit ng isang batch
+  const showProfit = async (id) => {
+    const data = await api.get(`/batches/${id}/profit`);
+    setProfit({ ...profit, [id]: data });
   };
 
   return (
-    <div>
-      <h2>Admin - Livestock & Pig Batch Records Management</h2>
+    <>
+      <PageHeader title="Livestock" subtitle="Pig batches with a four-month cycle." />
+      {msg && <div className="toast" onAnimationEnd={() => setMsg('')}>{msg}</div>}
 
-      {/* Add / Edit Livestock Batch Form */}
-      <h3>{editId ? 'Edit Pig Batch' : 'Add Livestock (New Pig Batch)'}</h3>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Batch ID:</label>
-          <input
-            type="text"
-            placeholder="e.g., BATCH-2026-01"
-            value={batchId}
-            onChange={(e) => setBatchId(e.target.value)}
-            required
-          />
+      <form className="card sale-form" onSubmit={(e) => { e.preventDefault(); run(() => api.post('/batches', form), () => setForm(empty)); }}>
+        <h3>Add livestock</h3>
+        <div className="row">
+          <input type="date" value={form.purchase_date} onChange={(e) => setForm({ ...form, purchase_date: e.target.value })} />
+          <input type="number" placeholder="Number of heads" value={form.heads} onChange={(e) => setForm({ ...form, heads: e.target.value })} />
+          <input type="number" placeholder="Capital cost" value={form.capital_cost} onChange={(e) => setForm({ ...form, capital_cost: e.target.value })} />
+          <button className="btn-primary">Add batch</button>
         </div>
-
-        <div>
-          <label>Batch Label / Notes (Optional):</label>
-          <input
-            type="text"
-            placeholder="e.g., Pen A Growers"
-            value={batchName}
-            onChange={(e) => setBatchName(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <label>Purchase Date:</label>
-          <input
-            type="date"
-            value={purchaseDate}
-            onChange={(e) => setPurchaseDate(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Number of Heads:</label>
-          <input
-            type="number"
-            min="1"
-            value={numberOfHeads}
-            onChange={(e) => setNumberOfHeads(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Capital Cost:</label>
-          <input
-            type="number"
-            step="0.01"
-            value={capitalCost}
-            onChange={(e) => setCapitalCost(e.target.value)}
-            required
-          />
-        </div>
-
-        <button type="submit">{editId ? 'Update Batch' : 'Add Livestock'}</button>
-        {editId && (
-          <button type="button" onClick={handleCancelEdit} style={{ marginLeft: '8px' }}>
-            Cancel
-          </button>
-        )}
       </form>
 
-      {/* Pig Batches List with Expected Selling Date & Cycle Countdown */}
-      <h3>Pig Batch Records</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Batch ID</th>
-            <th>Batch Label</th>
-            <th>Purchase Date</th>
-            <th>Number of Heads</th>
-            <th>Capital Cost</th>
-            <th>Expected Selling Date (~4 mos)</th>
-            <th>Cycle Countdown</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {batches.map((b) => (
-            <tr key={b.id}>
-              <td>{b.batch_id}</td>
-              <td>{b.batch_name || '-'}</td>
-              <td>{b.purchase_date}</td>
-              <td>{b.number_of_heads} heads</td>
-              <td>{b.capital_cost}</td>
-              <td>{b.expected_selling_date}</td>
-              <td>
-                {b.remaining_days > 0 ? (
-                  <span><strong>{b.remaining_days} days</strong> remaining</span>
-                ) : b.remaining_days === 0 ? (
-                  <strong>Ready to Sell Today</strong>
-                ) : (
-                  <span><strong>{Math.abs(b.remaining_days)} days</strong> past expected selling date</span>
-                )}
-              </td>
-              <td>
-                <button type="button" onClick={() => handleEdit(b)}>
-                  Edit
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
+      <div className="batch-grid">
+        {batches.map((b, i) => {
+          const p = profit[b.id];
+          // progress ng 120 days na cycle
+          const progress = Math.min(100, Math.max(0, ((120 - b.days_left) / 120) * 100));
+          const isEditing = editing?.id === b.id;
+          return (
+            <div className="batch-card" key={b.id} style={{ animationDelay: `${i * 80}ms` }}>
+              <div className="batch-top">
+                <h3>Batch #{b.id}</h3>
+                <span className={`badge ${b.days_left <= 0 ? 'badge-ok' : 'badge-warn'}`}>
+                  {b.days_left <= 0 ? 'Ready to sell' : `${b.days_left} days left`}
+                </span>
+              </div>
 
-export default AdminBabuyanBatches;
+              {isEditing ? (
+                <div className="edit-box">
+                  <input type="date" value={String(editing.purchase_date).slice(0, 10)} onChange={(e) => setEditing({ ...editing, purchase_date: e.target.value })} />
+                  <input type="number" placeholder="Heads" value={editing.heads} onChange={(e) => setEditing({ ...editing, heads: e.target.value })} />
+                  <input type="number" placeholder="Capital cost" value={editing.capital_cost} onChange={(e) => setEditing({ ...editing, capital_cost: e.target.value })} />
+                  <button className="btn-ghost" onClick={() => run(() => api.put(`/batches/${b.id}`, editing), () => setEditing(null))}>Save</button>
+                  <button className="btn-link" onClick={() => setEditing(null)}>Cancel</button>
+                </div>
+              ) : (
+                <>
+                  <p>Bought {fmtDate(b.purchase_date)} · {b.heads} heads · capital {peso(b.capital_cost)}</p>
+                  <p>Expected sale: {fmtDate(b.expected_sell_date)}</p>
+                  <button className="btn-link" onClick={() => setEditing({ ...b })}>Edit batch</button>
+                </>
+              )}
+              <div className="progress"><span style={{ width: `${progress}%` }} /></div>
+
+              {p ? (
+                <ul className="profit-list">
+                  <li>Capital <b>{peso(p.capital)}</b></li>
+                  <li>Feed <b>{peso(p.feed)}</b></li>
+                  <li>Medicine / vet <b>{peso(p.medicine)}</b></li>
+                  <li>Other expenses <b>{peso(p.other)}</b></li>
+                  <li className="sum">Total raising cost <b>{peso(p.totalCost)}</b></li>
+                  <li>Live weight sold <b>{p.kilosSold} kg</b></li>
+                  <li>Income <b>{peso(p.income)}</b></li>
+                  <li>Cost per kilo <b>{peso(p.costPerKilo)}</b></li>
+                  <li className={p.netProfit >= 0 ? 'gain' : 'loss'}>Net profit <b>{peso(p.netProfit)}</b></li>
+                </ul>
+              ) : (
+                <button className="btn-ghost" onClick={() => showProfit(b.id)}>View profit</button>
+              )}
+              <button className="btn-link" onClick={() => setOpenId(openId === b.id ? null : b.id)}>
+                {openId === b.id ? 'Hide health logs' : 'Health logs'}
+              </button>
+              {openId === b.id && <HealthPanel batchId={b.id} />}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}

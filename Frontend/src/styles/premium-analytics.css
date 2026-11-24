@@ -1,0 +1,21 @@
+/* Premium analytics — graph-focused layout */
+.premium-analytics-intro {
+  position: relative; overflow: hidden; padding: 30px 34px; margin: 0 0 22px; border-radius: 24px; color: #fff;
+  background:
+    radial-gradient(480px 240px at 95% -10%, color-mix(in srgb, var(--accent-2) 65%, transparent), transparent 70%),
+    linear-gradient(125deg, var(--side-bg), var(--side-bg-2) 70%, var(--accent-dark));
+  box-shadow: var(--shadow-lg);
+  transition: background 0.4s;
+}
+.premium-analytics-intro::after { content: ''; position: absolute; inset: 0; opacity: 0.09; pointer-events: none; background: repeating-linear-gradient(115deg, #fff 0 1px, transparent 1px 24px); mask-image: linear-gradient(90deg, transparent 30%, #000); }
+.premium-analytics-intro > * { position: relative; z-index: 1; }
+.premium-analytics-intro span { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: 700; color: color-mix(in srgb, var(--accent-2) 80%, #fff); }
+.premium-analytics-intro span::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 30%, transparent); animation: live 2s ease-in-out infinite; }
+@keyframes live { 50% { box-shadow: 0 0 0 8px transparent; } }
+.premium-analytics-intro h2 { font-size: 2rem; letter-spacing: -0.04em; margin: 10px 0 6px; color: #fff; font-weight: 800; }
+.premium-analytics-intro p { opacity: 0.8; margin: 0; max-width: 60ch; }
+.analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; margin: 22px 0 36px; }
+.analytics-grid .chart-card { min-width: 0; padding: 26px; border-radius: 22px; }
+.analytics-grid .chart-card h3 { font-size: 1rem; margin: 0 0 20px; }
+.analytics-error { padding: 24px; color: var(--bad); }
+@media (max-width: 850px) { .analytics-grid { grid-template-columns: 1fr; } .premium-analytics-intro { padding: 22px; } }

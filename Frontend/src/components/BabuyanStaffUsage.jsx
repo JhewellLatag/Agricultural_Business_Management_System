@@ -1,177 +1,83 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 2.1.6, 3.1.2 — Babuyan Usage UI
+// Assigned Member(s): Miguel Justin Javier, Ivan Lanaria
+// NOTE: Shared modules are labeled with all applicable WBS responsibilities.
+// Usage.jsx - feeds / medicine / vitamins na nilabas sa mga baboy (2.1.6)
+// Staff at Admin pwede. Walang cost o profit dito.
+import { useEffect, useState } from 'react';
+import { api, fmtDate } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import DataTable from './DataTable.jsx';
+import '../styles/forms.css';
 
-const BabuyanStaffUsage = () => {
-  const [inventory, setInventory] = useState([]);
-  const [usageRecords, setUsageRecords] = useState([]);
+export default function BabuyanStaffUsage() {
+  const [items, setItems] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [data, setData] = useState({ records: [], mismatches: [] });
+  const [msg, setMsg] = useState('');
+  const blank = { item_id: '', batch_id: '', quantity: '', released_at: new Date().toISOString().slice(0, 10) };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null); // { id, quantity }
 
-  const [inventoryId, setInventoryId] = useState('');
-  const [quantityReleased, setQuantityReleased] = useState('');
-  const [releaseDate, setReleaseDate] = useState(new Date().toISOString().split('T')[0]);
-  const [editId, setEditId] = useState(null);
-
-  const loadData = async () => {
-    const res = await api.get('/babuyan/inventory-usage');
-    setInventory(res.data.inventory);
-    setUsageRecords(res.data.usageRecords);
+  const load = () => {
+    api.get('/inventory/babuyan').then(setItems);
+    api.get('/batches').then(setBatches);
+    api.get('/usage').then(setData);
   };
+  useEffect(load, []);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (editId) {
-      await api.put(/babuyan/usage/${editId}, {
-        quantity_released: quantityReleased,
-        release_date: releaseDate,
-      });
-    } else {
-      await api.post('/babuyan/usage', {
-        inventory_id: inventoryId,
-        quantity_released: quantityReleased,
-        release_date: releaseDate,
-      });
-    }
-    setEditId(null);
-    setInventoryId('');
-    setQuantityReleased('');
-    loadData();
-  };
-
-  const handleEdit = (rec) => {
-    setEditId(rec.id);
-    setInventoryId(rec.inventory_id);
-    setQuantityReleased(rec.quantity_released);
-    setReleaseDate(rec.release_date);
+  const run = async (fn) => {
+    try { const r = await fn(); setMsg(r.message); load(); } catch (e) { setMsg(e.message); }
   };
 
   return (
-    <div>
-      <h2>Babuyan Inventory & Usage Matching</h2>
+    <>
+      <PageHeader title="Released feeds & medicine" subtitle="Every release is deducted from the Babuyan inventory." />
+      {msg && <div className="toast" onAnimationEnd={() => setMsg('')}>{msg}</div>}
 
-      {/* Mismatch Warning Banner */}
-      {inventory.some((item) => Boolean(item.has_mismatch)) && (
-        <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '10px', marginBottom: '12px' }}>
-          <strong>Mismatch Warning:</strong> Released usage records and Babuyan inventory do not agree. Please review and edit usage records to match inventory.
+      {/* Mismatch warning kapag hindi tugma ang records at inventory */}
+      {data.mismatches.length > 0 && (
+        <div className="warn-banner">
+          Records and inventory do not match for: {data.mismatches.map((m) => m.name).join(', ')}. Check the usage records below.
         </div>
       )}
 
-      {/* View Babuyan Inventory */}
-      <h3>Babuyan Inventory</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Item</th>
-            <th>Available Stock</th>
-            <th>Total Released</th>
-            <th>Matching Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {inventory.map((item) => (
-            <tr key={item.id}>
-              <td>{item.category}</td>
-              <td>{item.item_name}</td>
-              <td>{item.current_quantity} {item.unit}</td>
-              <td>{item.total_released} {item.unit}</td>
-              <td>
-                {Boolean(item.has_mismatch) ? (
-                  <span style={{ color: 'red', fontWeight: 'bold' }}>Mismatch Warning</span>
-                ) : (
-                  <span>Matched</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* Record or Edit Released Feeds, Medicine, and Vitamins */}
-      <h3>{editId ? 'Edit Released Usage Record' : 'Record Released Feeds, Medicine, or Vitamins'}</h3>
-      <form onSubmit={handleSubmit}>
-        {!editId && (
-          <div>
-            <label>Select Item:</label>
-            <select value={inventoryId} onChange={(e) => setInventoryId(e.target.value)} required>
-              <option value="">-- Choose Item --</option>
-              {inventory.map((item) => (
-                <option key={item.id} value={item.id}>
-                  [{item.category}] {item.item_name} ({item.current_quantity} {item.unit} available)
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div>
-          <label>Quantity Released:</label>
-          <input
-            type="number"
-            step="0.01"
-            value={quantityReleased}
-            onChange={(e) => setQuantityReleased(e.target.value)}
-            required
-          />
+      <form className="card sale-form" onSubmit={(e) => { e.preventDefault();
+        run(async () => { const r = await api.post('/usage', form); setForm(blank); return r; }); }}>
+        <h3>Record release</h3>
+        <div className="row">
+          <select value={form.item_id} onChange={(e) => setForm({ ...form, item_id: e.target.value })}>
+            <option value="">Choose item</option>
+            {items.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.quantity} {i.unit} left)</option>)}
+          </select>
+          <select value={form.batch_id} onChange={(e) => setForm({ ...form, batch_id: e.target.value })}>
+            <option value="">Batch</option>
+            {batches.map((b) => <option key={b.id} value={b.id}>Batch #{b.id}</option>)}
+          </select>
+          <input type="number" placeholder="Quantity" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
+          <input type="date" value={form.released_at} onChange={(e) => setForm({ ...form, released_at: e.target.value })} />
+          <button className="btn-primary">Save release</button>
         </div>
-
-        <div>
-          <label>Release Date:</label>
-          <input
-            type="date"
-            value={releaseDate}
-            onChange={(e) => setReleaseDate(e.target.value)}
-            required
-          />
-        </div>
-
-        <button type="submit">{editId ? 'Update Usage Record' : 'Record Release'}</button>
-        {editId && (
-          <button
-            type="button"
-            onClick={() => {
-              setEditId(null);
-              setInventoryId('');
-              setQuantityReleased('');
-            }}
-          >
-            Cancel
-          </button>
-        )}
       </form>
 
-      {/* Released Usage Records Table */}
-      <h3>Released Usage Records</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Category</th>
-            <th>Item</th>
-            <th>Quantity Released</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {usageRecords.map((rec) => (
-            <tr key={rec.id}>
-              <td>{rec.release_date}</td>
-              <td>{rec.category}</td>
-              <td>{rec.item_name}</td>
-              <td>{rec.quantity_released} {rec.unit}</td>
-              <td>
-                <button type="button" onClick={() => handleEdit(rec)}>
-                  Edit
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+      <div className="card">
+        <DataTable
+          empty="No releases yet."
+          rows={data.records}
+          columns={[
+            { key: 'released_at', label: 'Date', render: (r) => fmtDate(r.released_at) },
+            { key: 'name', label: 'Item' },
+            { key: 'batch_id', label: 'Batch', render: (r) => (r.batch_id ? `#${r.batch_id}` : '-') },
+            { key: 'quantity', label: 'Quantity', render: (r) => editing?.id === r.id ? (
+              <input type="number" style={{ width: 90, margin: 0 }} value={editing.quantity} onChange={(e) => setEditing({ ...editing, quantity: e.target.value })} />
+            ) : `${r.quantity} ${r.unit}` },
+            { key: 'actions', label: '', render: (r) => editing?.id === r.id ? (
+              <button className="btn-ghost" onClick={() => run(async () => { const x = await api.put(`/usage/${r.id}`, { quantity: editing.quantity }); setEditing(null); return x; })}>Save</button>
+            ) : (
+              <button className="btn-ghost" onClick={() => setEditing({ id: r.id, quantity: r.quantity })}>Edit</button>
+            ) },
+          ]}
+        />
+      </div>
+    </>
   );
-};
-
-export default BabuyanStaffUsage;
+}

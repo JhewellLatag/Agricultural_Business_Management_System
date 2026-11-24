@@ -1,139 +1,51 @@
-import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+// WBS 2.2.1 — Gulayan Expenses ONLY
+// Assigned Member: Miguel Justin Javier
+// WBS 2.2.1–2.2.3 — Department Expenses UI
+// Assigned Member(s): Miguel Justin Javier
+// Expenses.jsx - VIEW ONLY. Awtomatikong nagkakaroon ng record dito kapag may na-add na stock sa Inventory
+// (tingnan ang addStock sa backend/controllers/inventoryController.js). Walang add form at walang date filter.
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { api, peso, fmtDate } from '../services/api.js';
+import PageHeader from './PageHeader.jsx';
+import DataTable from './DataTable.jsx';
+import '../styles/forms.css';
 
-const GulayanExpenses = () => {
-  const [category, setCategory] = useState('sourcing');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
-  const [filterDate, setFilterDate] = useState('');
+export default function GulayanExpenses({ dept: forced, embedded = false }) {
+  const params = useParams();
+  const dept = 'gulayan';
+  const [data, setData] = useState({ categories: [], rows: [], totals: {}, grandTotal: 0 });
+  const [category, setCategory] = useState('');
+  const [msg, setMsg] = useState('');
 
-  const [expenses, setExpenses] = useState([]);
-  const [totals, setTotals] = useState({
-    sourcing: 0,
-    logistics: 0,
-    labor: 0,
-    utilities: 0,
-    overall: 0,
-  });
-
-  const loadExpenses = async () => {
-    const params = {};
-    if (filterDate) params.date = filterDate;
-
-    const res = await api.get('/gulayan/expenses', { params });
-    setExpenses(res.data.expenses);
-    setTotals(res.data.totals);
-  };
-
+  useEffect(() => { setCategory(''); }, [dept]);
   useEffect(() => {
-    loadExpenses();
-  }, [filterDate]);
+    api.get(`/expenses/${dept}?category=${encodeURIComponent(category)}`).then(setData).catch((e) => setMsg(e.message));
+  }, [dept, category]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    await api.post('/gulayan/expenses', {
-      category,
-      amount,
-      description,
-      expense_date: expenseDate,
-    });
-
-    setAmount('');
-    setDescription('');
-    loadExpenses();
-  };
+  const columns = [
+    { key: 'spent_at', label: 'Date', render: (r) => fmtDate(r.spent_at) },
+    { key: 'category', label: 'Category', render: (r) => <span className="badge badge-ok">{r.category}</span> },
+    ...(dept === 'babuyan' ? [{ key: 'batch_id', label: 'Batch', render: (r) => (r.batch_id ? `#${r.batch_id}` : '-') }] : []),
+    { key: 'note', label: 'Note' },
+    { key: 'amount', label: 'Amount', render: (r) => peso(r.amount) },
+  ];
 
   return (
-    <div>
-      <h2>Admin - Gulayan Expenses</h2>
+    <>
+      {!embedded && <PageHeader title={`${dept} expenses`} subtitle={`View only. Total shown: ${peso(data.grandTotal)}`} />}
+      {embedded && <p className="view-note">View only. Stock purchase expenses are calculated automatically from quantity × purchase cost when inventory is received. Total shown: <strong>{peso(data.grandTotal)}</strong></p>}
+      {msg && <div className="toast" onAnimationEnd={() => setMsg('')}>{msg}</div>}
 
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Category:</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} required>
-            <option value="sourcing">Sourcing</option>
-            <option value="logistics">Logistics</option>
-            <option value="labor">Labor</option>
-            <option value="utilities">Utilities</option>
-          </select>
-        </div>
-
-        <div>
-          <label>Amount:</label>
-          <input
-            type="number"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Description:</label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            required
-          />
-        </div>
-
-        <div>
-          <label>Date:</label>
-          <input
-            type="date"
-            value={expenseDate}
-            onChange={(e) => setExpenseDate(e.target.value)}
-            required
-          />
-        </div>
-
-        <button type="submit">Save Expense</button>
-      </form>
-
-      <div>
-        <label>Filter by Date: </label>
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-        />
+      <div className="chips">
+        {data.categories.map((c) => (
+          <button key={c} className={`chip ${category === c ? 'active' : ''}`} onClick={() => setCategory(category === c ? '' : c)}>
+            <span>{c}</span><strong>{peso(data.totals[c] || 0)}</strong>
+          </button>
+        ))}
       </div>
 
-      <h3>Category Totals</h3>
-      <ul>
-        <li>Sourcing: {totals.sourcing}</li>
-        <li>Logistics: {totals.logistics}</li>
-        <li>Labor: {totals.labor}</li>
-        <li>Utilities: {totals.utilities}</li>
-        <li><strong>Total Gulayan Expenses: {totals.overall}</strong></li>
-      </ul>
-
-      <h3>Categorized Expenses</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {expenses.map((exp) => (
-            <tr key={exp.id}>
-              <td>{exp.category}</td>
-              <td>{exp.description}</td>
-              <td>{exp.amount}</td>
-              <td>{exp.expense_date}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+      <div className="card"><DataTable columns={columns} rows={data.rows} empty="No expenses yet." /></div>
+    </>
   );
-};
-
-export default GulayanExpenses;
+}
