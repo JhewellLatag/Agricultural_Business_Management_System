@@ -1,10 +1,86 @@
 const db = require('../config/db');
 
 // ==========================================
+// 4.6 COMMON DATA-ACCESS & AGGREGATION HELPERS
+// ==========================================
+const getDepartmentExpenseShare = async (department) => {
+  const [expenseCategories] = await db.query(
+    `SELECT category, SUM(amount) AS total_amount
+     FROM expenses
+     WHERE department = ?
+     GROUP BY category`,
+    [department]
+  );
+
+  const totalExpense = expenseCategories.reduce(
+    (sum, row) => sum + Number(row.total_amount),
+    0
+  );
+
+  return expenseCategories.map((row) => ({
+    category: row.category,
+    total_amount: Number(row.total_amount),
+    percentage:
+      totalExpense > 0
+        ? Number(((Number(row.total_amount) / totalExpense) * 100).toFixed(2))
+        : 0,
+  }));
+};
+
+const getMonthlySpoilageTrends = async (tableName, department) => {
+  const [spoilageTrends] = await db.query(
+    `SELECT DATE_FORMAT(movement_date, '%Y-%m') AS month,
+            SUM(kilos) AS spoiled_kilos,
+            SUM(spoilage_loss) AS spoilage_loss
+     FROM ${tableName}
+     WHERE department = ? AND movement_type = 'OUT_SPOILAGE'
+     GROUP BY DATE_FORMAT(movement_date, '%Y-%m')
+     ORDER BY month ASC`,
+    [department]
+  );
+  return spoilageTrends;
+};
+
+const getMonthlyProfitTrend = async (salesTable, dateCol, amountCol, department) => {
+  const [monthlyRevenue] = await db.query(
+    `SELECT DATE_FORMAT(${dateCol}, '%Y-%m') AS month, COALESCE(SUM(${amountCol}), 0) AS revenue
+     FROM ${salesTable}
+     WHERE department = ?
+     GROUP BY DATE_FORMAT(${dateCol}, '%Y-%m')`,
+    [department]
+  );
+
+  const [monthlyExpenses] = await db.query(
+    `SELECT DATE_FORMAT(expense_date, '%Y-%m') AS month, COALESCE(SUM(amount), 0) AS expenses
+     FROM expenses
+     WHERE department = ?
+     GROUP BY DATE_FORMAT(expense_date, '%Y-%m')`,
+    [department]
+  );
+
+  const monthsSet = new Set([
+    ...monthlyRevenue.map((r) => r.month),
+    ...monthlyExpenses.map((e) => e.month),
+  ]);
+
+  return Array.from(monthsSet)
+    .sort()
+    .map((month) => {
+      const rev = Number(monthlyRevenue.find((r) => r.month === month)?.revenue || 0);
+      const exp = Number(monthlyExpenses.find((e) => e.month === month)?.expenses || 0);
+      return {
+        month,
+        revenue: rev,
+        expenses: exp,
+        net_profit: rev - exp,
+      };
+    });
+};
+
+// ==========================================
 // 1.10 GULAYAN ANALYTICS
 // ==========================================
 exports.getGulayanAnalytics = async () => {
-  // 1. Best-selling products
   const [bestSelling] = await db.query(
     `SELECT item_name, SUM(kilos) AS total_kilos, SUM(total_amount) AS total_sales
      FROM gulayan_sales
@@ -14,7 +90,6 @@ exports.getGulayanAnalytics = async () => {
      LIMIT 5`
   );
 
-  // 2. Peak sales days
   const [peakSalesDays] = await db.query(
     `SELECT DATE(sale_date) AS sale_day, SUM(total_amount) AS daily_sales
      FROM gulayan_sales
@@ -24,7 +99,6 @@ exports.getGulayanAnalytics = async () => {
      LIMIT 5`
   );
 
-  // 3. Underperforming items (lowest sold kilos, including items with 0 sales)
   const [underperforming] = await db.query(
     `SELECT i.item_name, COALESCE(SUM(s.kilos), 0) AS total_kilos
      FROM inventory i
@@ -36,35 +110,8 @@ exports.getGulayanAnalytics = async () => {
      LIMIT 5`
   );
 
-  // 4. Spoilage trends
-  const [spoilageTrends] = await db.query(
-    `SELECT DATE_FORMAT(movement_date, '%Y-%m') AS month,
-            SUM(kilos) AS spoiled_kilos,
-            SUM(spoilage_loss) AS spoilage_loss
-     FROM gulayan_stock_movements
-     WHERE department = 'Gulayan' AND movement_type = 'OUT_SPOILAGE'
-     GROUP BY DATE_FORMAT(movement_date, '%Y-%m')
-     ORDER BY month ASC`
-  );
-
-  // 5. Expense share by category
-  const [expenseCategories] = await db.query(
-    `SELECT category, SUM(amount) AS total_amount
-     FROM expenses
-     WHERE department = 'Gulayan'
-     GROUP BY category`
-  );
-
-  const totalExpense = expenseCategories.reduce(
-    (sum, row) => sum + Number(row.total_amount),
-    0
-  );
-
-  const expenseShare = expenseCategories.map((row) => ({
-    category: row.category,
-    total_amount: Number(row.total_amount),
-    percentage: totalExpense > 0 ? Number(((Number(row.total_amount) / totalExpense) * 100).toFixed(2)) : 0,
-  }));
+  const spoilageTrends = await getMonthlySpoilageTrends('gulayan_stock_movements', 'Gulayan');
+  const expenseShare = await getDepartmentExpenseShare('Gulayan');
 
   return {
     bestSelling,
@@ -79,7 +126,6 @@ exports.getGulayanAnalytics = async () => {
 // 2.10 PRUTASAN ANALYTICS
 // ==========================================
 exports.getPrutasanAnalytics = async () => {
-  // 1. Best-selling products
   const [bestSelling] = await db.query(
     `SELECT fruit AS item_name, SUM(kilos) AS total_kilos, SUM(total_amount) AS total_sales
      FROM prutasan_sales
@@ -89,7 +135,6 @@ exports.getPrutasanAnalytics = async () => {
      LIMIT 5`
   );
 
-  // 2. Peak sales days
   const [peakSalesDays] = await db.query(
     `SELECT DATE(sale_date) AS sale_day, SUM(total_amount) AS daily_sales
      FROM prutasan_sales
@@ -99,7 +144,6 @@ exports.getPrutasanAnalytics = async () => {
      LIMIT 5`
   );
 
-  // 3. Underperforming items (lowest sold kilos, including items with 0 sales)
   const [underperforming] = await db.query(
     `SELECT i.item_name, COALESCE(SUM(s.kilos), 0) AS total_kilos
      FROM inventory i
@@ -111,35 +155,8 @@ exports.getPrutasanAnalytics = async () => {
      LIMIT 5`
   );
 
-  // 4. Spoilage trends
-  const [spoilageTrends] = await db.query(
-    `SELECT DATE_FORMAT(movement_date, '%Y-%m') AS month,
-            SUM(kilos) AS spoiled_kilos,
-            SUM(spoilage_loss) AS spoilage_loss
-     FROM prutasan_stock_movements
-     WHERE department = 'Prutasan' AND movement_type = 'OUT_SPOILAGE'
-     GROUP BY DATE_FORMAT(movement_date, '%Y-%m')
-     ORDER BY month ASC`
-  );
-
-  // 5. Expense share by category
-  const [expenseCategories] = await db.query(
-    `SELECT category, SUM(amount) AS total_amount
-     FROM expenses
-     WHERE department = 'Prutasan'
-     GROUP BY category`
-  );
-
-  const totalExpense = expenseCategories.reduce(
-    (sum, row) => sum + Number(row.total_amount),
-    0
-  );
-
-  const expenseShare = expenseCategories.map((row) => ({
-    category: row.category,
-    total_amount: Number(row.total_amount),
-    percentage: totalExpense > 0 ? Number(((Number(row.total_amount) / totalExpense) * 100).toFixed(2)) : 0,
-  }));
+  const spoilageTrends = await getMonthlySpoilageTrends('prutasan_stock_movements', 'Prutasan');
+  const expenseShare = await getDepartmentExpenseShare('Prutasan');
 
   return {
     bestSelling,
@@ -167,7 +184,6 @@ exports.getBabuyanAnalytics = async () => {
     const capitalCost = Number(batch.capital_cost || 0);
     const activeHeads = Number(batch.number_of_heads || 0);
 
-    // 1. Total feed consumed per batch
     const [feedUsageRows] = await db.query(
       `SELECT COALESCE(SUM(u.quantity_released), 0) AS total_feed_units
        FROM babuyan_usage_records u
@@ -177,7 +193,6 @@ exports.getBabuyanAnalytics = async () => {
     );
     const totalFeedUnits = Number(feedUsageRows[0].total_feed_units);
 
-    // 2. Categorized batch expenses (feed, medicine/veterinary care, other expenses)
     const [expenseRows] = await db.query(
       `SELECT 
          COALESCE(SUM(CASE WHEN category = 'feed' THEN amount ELSE 0 END), 0) AS feed_cost,
@@ -193,7 +208,6 @@ exports.getBabuyanAnalytics = async () => {
     const otherExpenses = Number(expenseRows[0].other_expenses);
     const totalProductionCost = capitalCost + feedCost + medicineCost + otherExpenses;
 
-    // 3. Live weight sold and total revenue per batch
     const [salesRows] = await db.query(
       `SELECT 
          COALESCE(SUM(live_weight_kg), 0) AS total_live_weight_sold,
@@ -206,7 +220,6 @@ exports.getBabuyanAnalytics = async () => {
     const soldWeightKg = Number(salesRows[0].total_live_weight_sold);
     const totalRevenue = Number(salesRows[0].total_revenue);
 
-    // Fallback to latest monitored live weight if batch has not been sold yet
     let totalLiveWeightKg = soldWeightKg;
     if (totalLiveWeightKg === 0) {
       const [latestWeight] = await db.query(
@@ -222,15 +235,12 @@ exports.getBabuyanAnalytics = async () => {
       }
     }
 
-    // Feed-to-Weight Ratio (FCR) = Total Feed / Total Live Weight (kg)
     const feedToWeightRatio =
       totalLiveWeightKg > 0 ? Number((totalFeedUnits / totalLiveWeightKg).toFixed(2)) : 0;
 
-    // Cost per Kilo of Live Weight = Total Production Cost / Total Live Weight (kg)
     const costPerKiloLiveWeight =
       totalLiveWeightKg > 0 ? Number((totalProductionCost / totalLiveWeightKg).toFixed(2)) : 0;
 
-    // Net Profit per batch
     const netProfit = totalRevenue - totalProductionCost;
 
     batchMetrics.push({
@@ -255,38 +265,12 @@ exports.getBabuyanAnalytics = async () => {
     });
   }
 
-  // 4. Monthly Profit Trend across Babuyan batches/sales
-  const [monthlyRevenue] = await db.query(
-    `SELECT DATE_FORMAT(sale_date, '%Y-%m') AS month, COALESCE(SUM(total_revenue), 0) AS revenue
-     FROM babuyan_hog_sales
-     WHERE department = 'Babuyan'
-     GROUP BY DATE_FORMAT(sale_date, '%Y-%m')`
+  const profitTrend = await getMonthlyProfitTrend(
+    'babuyan_hog_sales',
+    'sale_date',
+    'total_revenue',
+    'Babuyan'
   );
-
-  const [monthlyExpenses] = await db.query(
-    `SELECT DATE_FORMAT(expense_date, '%Y-%m') AS month, COALESCE(SUM(amount), 0) AS expenses
-     FROM expenses
-     WHERE department = 'Babuyan'
-     GROUP BY DATE_FORMAT(expense_date, '%Y-%m')`
-  );
-
-  const monthsSet = new Set([
-    ...monthlyRevenue.map((r) => r.month),
-    ...monthlyExpenses.map((e) => e.month),
-  ]);
-
-  const profitTrend = Array.from(monthsSet)
-    .sort()
-    .map((month) => {
-      const rev = Number(monthlyRevenue.find((r) => r.month === month)?.revenue || 0);
-      const exp = Number(monthlyExpenses.find((e) => e.month === month)?.expenses || 0);
-      return {
-        month,
-        revenue: rev,
-        expenses: exp,
-        net_profit: rev - exp,
-      };
-    });
 
   return {
     batchMetrics,

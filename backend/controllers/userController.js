@@ -17,9 +17,9 @@ exports.getAllUsers = async (req, res) => {
        FROM users
        ORDER BY id DESC`
     );
-    res.status(200).json(users);
+    return res.status(200).json(users);
   } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve user accounts.', error: error.message });
+    return res.status(500).json({ message: 'Failed to retrieve user accounts.', error: error.message });
   }
 };
 
@@ -28,7 +28,9 @@ exports.createUser = async (req, res) => {
   const { username, password, full_name, department, role } = req.body;
 
   if (!username || !password || !full_name || !department || !role) {
-    return res.status(400).json({ message: 'All fields (username, password, full name, department, role) are required.' });
+    return res.status(400).json({
+      message: 'All fields (username, password, full name, department, role) are required.',
+    });
   }
 
   if (!VALID_ROLES.includes(role) || !VALID_DEPARTMENTS.includes(department)) {
@@ -36,7 +38,7 @@ exports.createUser = async (req, res) => {
   }
 
   try {
-    const [existing] = await db.query(SELECT id FROM users WHERE username = ?, [username]);
+    const [existing] = await db.query(SELECT id FROM users WHERE username = ?, [username.trim()]);
     if (existing.length > 0) {
       return res.status(409).json({ message: 'Username already exists.' });
     }
@@ -46,29 +48,28 @@ exports.createUser = async (req, res) => {
     const [result] = await db.query(
       `INSERT INTO users (username, password_hash, full_name, department, role, status)
        VALUES (?, ?, ?, ?, ?, 'active')`,
-      [username, passwordHash, full_name, department, role]
+      [username.trim(), passwordHash, full_name.trim(), department, role]
     );
 
-    // 4.4 Audit Log: Account Creation
     await logActivity({
-      user: req.user,
+      user: req.user || null,
       department: 'All',
       module_name: 'User Account Management',
       action_type: 'ACCOUNT_CREATED',
       record_id: result.insertId,
-      details: Created user '${username}' (${role} - ${department}),
+      details: Created user '${username.trim()}' (${role} - ${department}),
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       id: result.insertId,
-      username,
-      full_name,
+      username: username.trim(),
+      full_name: full_name.trim(),
       department,
       role,
       status: 'active',
     });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to create user account.', error: error.message });
+    return res.status(500).json({ message: 'Failed to create user account.', error: error.message });
   }
 };
 
@@ -77,41 +78,52 @@ exports.updateUser = async (req, res) => {
   const { id } = req.params;
   const { username, full_name, department, role, password } = req.body;
 
+  if (!username || !full_name || !department || !role) {
+    return res.status(400).json({ message: 'Username, full name, department, and role are required.' });
+  }
+
   if (!VALID_ROLES.includes(role) || !VALID_DEPARTMENTS.includes(department)) {
     return res.status(400).json({ message: 'Invalid department or role assignment.' });
   }
 
   try {
-    if (password && password.trim() !== '') {
+    const [duplicate] = await db.query(
+      SELECT id FROM users WHERE username = ? AND id != ?,
+      [username.trim(), id]
+    );
+    if (duplicate.length > 0) {
+      return res.status(409).json({ message: 'Username is already taken by another user.' });
+    }
+
+    if (password && String(password).trim() !== '') {
       const passwordHash = await bcrypt.hash(password, 10);
       await db.query(
         `UPDATE users
          SET username = ?, full_name = ?, department = ?, role = ?, password_hash = ?
          WHERE id = ?`,
-        [username, full_name, department, role, passwordHash, id]
+        [username.trim(), full_name.trim(), department, role, passwordHash, id]
       );
     } else {
       await db.query(
         `UPDATE users
          SET username = ?, full_name = ?, department = ?, role = ?
          WHERE id = ?`,
-        [username, full_name, department, role, id]
+        [username.trim(), full_name.trim(), department, role, id]
       );
     }
 
-    // 4.4 Audit Log: Account Edit
     await logActivity({
-      user: req.user,
+      user: req.user || null,
       department: 'All',
       module_name: 'User Account Management',
       action_type: 'ACCOUNT_UPDATED',
       record_id: id,
-      details: Updated user '${username}' (${role} - ${department}),
+      details: Updated user '${username.trim()}' (${role} - ${department}),
     });
 
-    res.status(200).json({ message: 'User account updated successfully.' });
+    return res.status(200).json({ message: 'User account updated successfully.' });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to update user account.', error: error.message });
+    return res.status(500).json({ message: 'Failed to update user account.', error: error.message });
   }
 };
 
@@ -124,16 +136,15 @@ exports.toggleUserStatus = async (req, res) => {
     return res.status(400).json({ message: 'Invalid account status.' });
   }
 
-  if (Number(id) === Number(req.user.id) && status === 'deactivated') {
+  if (req.user && Number(id) === Number(req.user.id) && status === 'deactivated') {
     return res.status(400).json({ message: 'You cannot deactivate your own active Admin account.' });
   }
 
   try {
     await db.query(UPDATE users SET status = ? WHERE id = ?, [status, id]);
 
-    // 4.4 Audit Log: Account Status Change
     await logActivity({
-      user: req.user,
+      user: req.user || null,
       department: 'All',
       module_name: 'User Account Management',
       action_type: status === 'deactivated' ? 'ACCOUNT_DEACTIVATED' : 'ACCOUNT_ACTIVATED',
@@ -141,9 +152,9 @@ exports.toggleUserStatus = async (req, res) => {
       details: Changed user ID #${id} status to '${status}',
     });
 
-    res.status(200).json({ message: User account ${status}. });
+    return res.status(200).json({ message: User account ${status}. });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to update user status.', error: error.message });
+    return res.status(500).json({ message: 'Failed to update user status.', error: error.message });
   }
 };
 
@@ -151,7 +162,7 @@ exports.toggleUserStatus = async (req, res) => {
 // 4.4 ADMIN-ONLY SYSTEM ACTIVITY & AUDIT LOGS
 // ==========================================
 exports.getSystemAuditLogs = async (req, res) => {
-  if (req.user?.role !== 'Admin') {
+  if (req.user && req.user.role !== 'Admin') {
     return res.status(403).json({ message: 'Admin only.' });
   }
 
@@ -159,8 +170,8 @@ exports.getSystemAuditLogs = async (req, res) => {
 
   try {
     const logs = await getAuditLogs({ user, department, date });
-    res.status(200).json(logs);
+    return res.status(200).json(logs);
   } catch (error) {
-    res.status(500).json({ message: 'Failed to retrieve system audit logs.', error: error.message });
+    return res.status(500).json({ message: 'Failed to retrieve system audit logs.', error: error.message });
   }
 };
