@@ -14,6 +14,8 @@ import AdminBabuyanProfitability from './AdminBabuyanProfitability';
 import BabuyanGrowthHealth from './BabuyanGrowthHealth';
 import AdminExpenses from './AdminExpenses';
 import AdminReportsScreen from './AdminReportsScreen';
+import GulayanAnalytics from './GulayanAnalytics';
+import PrutasanAnalytics from './PrutasanAnalytics';
 import BabuyanAnalytics from './BabuyanAnalytics';
 import AdminUserManagement from './AdminUserManagement';
 import AdminAuditLogs from './AdminAuditLogs';
@@ -150,12 +152,21 @@ const AdminInterface = ({ user, onLogout }) => {
           </ul>
         </div>
 
+        {/* 4.6 ANALYTICS MENU (SEPARATE PER DEPARTMENT) */}
+        <div style={{ marginBottom: '14px' }}>
+          <strong>Analytics</strong>
+          <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '6px' }}>
+            <li><Link to="/admin/analytics/gulayan" style={{ color: '#cbd5e1' }}>Gulayan Analytics</Link></li>
+            <li><Link to="/admin/analytics/prutasan" style={{ color: '#cbd5e1' }}>Prutasan Analytics</Link></li>
+            <li><Link to="/admin/analytics/babuyan" style={{ color: '#cbd5e1' }}>Babuyan Analytics</Link></li>
+          </ul>
+        </div>
+
         {/* SYSTEM-WIDE ADMIN MENUS */}
         <div style={{ marginBottom: '14px' }}>
           <strong>Management</strong>
           <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '6px' }}>
             <li><Link to="/admin/reports" style={{ color: '#cbd5e1' }}>Reports</Link></li>
-            <li><Link to="/admin/analytics" style={{ color: '#cbd5e1' }}>Analytics</Link></li>
             <li><Link to="/admin/users" style={{ color: '#cbd5e1' }}>User Access Management</Link></li>
             <li><Link to="/admin/audit-logs" style={{ color: '#cbd5e1' }}>Activity &amp; Audit Logs</Link></li>
           </ul>
@@ -344,9 +355,13 @@ const AdminInterface = ({ user, onLogout }) => {
             <Route path="babuyan/growth-health" element={<BabuyanGrowthHealth />} />
             <Route path="babuyan/profitability" element={<AdminBabuyanProfitability />} />
 
-            {/* Shared Reports & Export Center, Analytics, User Access Management, Activity & Audit Logs */}
+            {/* Separate Department Analytics Pages (4.6) */}
+            <Route path="analytics/gulayan" element={<GulayanAnalytics />} />
+            <Route path="analytics/prutasan" element={<PrutasanAnalytics />} />
+            <Route path="analytics/babuyan" element={<BabuyanAnalytics />} />
+
+            {/* Shared Reports, User Access Management, Activity & Audit Logs */}
             <Route path="reports" element={<AdminReportsScreen />} />
-            <Route path="analytics" element={<BabuyanAnalytics />} />
             <Route path="users" element={<AdminUserManagement />} />
             <Route path="audit-logs" element={<AdminAuditLogs />} />
           </Routes>

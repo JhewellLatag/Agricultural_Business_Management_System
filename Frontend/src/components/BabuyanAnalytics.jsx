@@ -1,17 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from 'recharts';
 import api from '../services/api';
+import { SharedBarChart, SharedLineChart } from './SharedAnalyticsCharts';
 
 const BabuyanAnalytics = () => {
   const [analytics, setAnalytics] = useState(null);
@@ -34,15 +23,13 @@ const BabuyanAnalytics = () => {
     Feed: b.cost_comparison.feed_cost,
     Medicine: b.cost_comparison.medicine_cost,
     Other: b.cost_comparison.other_expenses,
-    TotalCost: b.cost_comparison.total_cost,
   }));
 
   return (
     <div>
       <h2>Babuyan Analytics</h2>
 
-      {/* 1. Batch Efficiency & Cost Metrics Table */}
-      <h3>Feed-to-Weight Ratio & Cost per Kilo of Live Weight (Per Batch)</h3>
+      <h3>Feed-to-Weight Ratio &amp; Cost per Kilo of Live Weight (Per Batch)</h3>
       <table>
         <thead>
           <tr>
@@ -78,40 +65,30 @@ const BabuyanAnalytics = () => {
         </tbody>
       </table>
 
-      {/* 2. Batch Cost Comparison Chart */}
-      <h3>Cost Comparison Between Batches</h3>
-      <div style={{ width: '100%', height: 320 }}>
-        <ResponsiveContainer>
-          <BarChart data={costComparisonChartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="batch" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="Capital" stackId="a" fill="#4f46e5" />
-            <Bar dataKey="Feed" stackId="a" fill="#16a34a" />
-            <Bar dataKey="Medicine" stackId="a" fill="#d97706" />
-            <Bar dataKey="Other" stackId="a" fill="#64748b" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Shared Bar Chart Component */}
+      <SharedBarChart
+        title="Cost Comparison Between Batches"
+        data={costComparisonChartData}
+        xKey="batch"
+        bars={[
+          { dataKey: 'Capital', stackId: 'a', color: '#4f46e5' },
+          { dataKey: 'Feed', stackId: 'a', color: '#16a34a' },
+          { dataKey: 'Medicine', stackId: 'a', color: '#d97706' },
+          { dataKey: 'Other', stackId: 'a', color: '#64748b' },
+        ]}
+      />
 
-      {/* 3. Profit Trend Chart */}
-      <h3>Profit Trend (Selling & Herd Expansion Insights)</h3>
-      <div style={{ width: '100%', height: 320 }}>
-        <ResponsiveContainer>
-          <LineChart data={profitTrend}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={2} />
-            <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#dc2626" strokeWidth={2} />
-            <Line type="monotone" dataKey="net_profit" name="Net Profit" stroke="#2563eb" strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Shared Line Chart Component */}
+      <SharedLineChart
+        title="Profit Trend (Selling & Herd Expansion Insights)"
+        data={profitTrend}
+        xKey="month"
+        lines={[
+          { dataKey: 'revenue', name: 'Revenue', color: '#16a34a' },
+          { dataKey: 'expenses', name: 'Expenses', color: '#dc2626' },
+          { dataKey: 'net_profit', name: 'Net Profit', color: '#2563eb' },
+        ]}
+      />
     </div>
   );
 };

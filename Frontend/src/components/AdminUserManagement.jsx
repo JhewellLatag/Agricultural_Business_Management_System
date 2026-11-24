@@ -11,6 +11,7 @@ const AdminUserManagement = () => {
   const [role, setRole] = useState('Gulayan Staff');
   const [department, setDepartment] = useState('Gulayan');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   const handleRoleChange = (selectedRole) => {
     setRole(selectedRole);
@@ -21,8 +22,12 @@ const AdminUserManagement = () => {
   };
 
   const loadUsers = async () => {
-    const res = await api.get('/admin/users');
-    setUsers(res.data);
+    try {
+      const res = await api.get('/admin/users');
+      setUsers(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load user accounts.');
+    }
   };
 
   useEffect(() => {
@@ -41,6 +46,7 @@ const AdminUserManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    setError('');
 
     try {
       if (editId) {
@@ -65,32 +71,50 @@ const AdminUserManagement = () => {
       resetForm();
       loadUsers();
     } catch (err) {
-      setMessage(err.response?.data?.message || 'Operation failed.');
+      setError(err.response?.data?.message || 'Operation failed.');
     }
   };
 
   const handleEdit = (u) => {
+    setError('');
+    setMessage('');
     setEditId(u.id);
-    setFullName(u.full_name);
-    setUsername(u.username);
+    setFullName(u.full_name || '');
+    setUsername(u.username || '');
     setPassword('');
-    setRole(u.role);
-    setDepartment(u.department);
+    setRole(u.role || 'Gulayan Staff');
+    setDepartment(u.department || 'Gulayan');
   };
 
   const handleToggleStatus = async (u) => {
+    setError('');
+    setMessage('');
     const newStatus = u.status === 'active' ? 'deactivated' : 'active';
-    await api.patch(/admin/users/${u.id}/status, { status: newStatus });
-    loadUsers();
+    try {
+      await api.patch(/admin/users/${u.id}/status, { status: newStatus });
+      setMessage(User account ${newStatus}.);
+      loadUsers();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update account status.');
+    }
   };
 
   return (
     <div>
       <h2>Admin - User Account &amp; Role-Based Access Management</h2>
 
-      {message && <p><strong>{message}</strong></p>}
+      {message && (
+        <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '10px', marginBottom: '12px' }}>
+          {message}
+        </div>
+      )}
 
-      {/* Create / Edit User Account Form */}
+      {error && (
+        <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '10px', marginBottom: '12px' }}>
+          {error}
+        </div>
+      )}
+
       <h3>{editId ? 'Edit User Account' : 'Create New User Account'}</h3>
       <form onSubmit={handleSubmit}>
         <div>
@@ -151,7 +175,6 @@ const AdminUserManagement = () => {
         )}
       </form>
 
-      {/* User Accounts List */}
       <h3>Registered User Accounts</h3>
       <table>
         <thead>
@@ -165,31 +188,34 @@ const AdminUserManagement = () => {
           </tr>
         </thead>
         <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
-              <td>{u.full_name}</td>
-              <td>{u.username}</td>
-              <td>{u.department}</td>
-              <td>{u.role}</td>
-              <td>
-                <strong style={{ color: u.status === 'active' ? 'green' : 'red' }}>
-                  {u.status.toUpperCase()}
-                </strong>
-              </td>
-              <td>
-                <button type="button" onClick={() => handleEdit(u)}>
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToggleStatus(u)}
-                  style={{ marginLeft: '8px' }}
-                >
-                  {u.status === 'active' ? 'Deactivate' : 'Activate'}
-                </button>
-              </td>
-            </tr>
-          ))}
+          {users.map((u) => {
+            const statusText = u.status || 'active';
+            return (
+              <tr key={u.id}>
+                <td>{u.full_name}</td>
+                <td>{u.username}</td>
+                <td>{u.department}</td>
+                <td>{u.role}</td>
+                <td>
+                  <strong style={{ color: statusText === 'active' ? 'green' : 'red' }}>
+                    {statusText.toUpperCase()}
+                  </strong>
+                </td>
+                <td>
+                  <button type="button" onClick={() => handleEdit(u)}>
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStatus(u)}
+                    style={{ marginLeft: '8px' }}
+                  >
+                    {statusText === 'active' ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
